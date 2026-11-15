@@ -2433,9 +2433,23 @@ fn toast(msg: &str) {
 }
 
 fn current_serial() -> Result<String> {
-    with_ui(|ui| ui.state.borrow().selected.clone())
-        .flatten()
-        .ok_or_else(|| anyhow::anyhow!("No TV selected — add one from the sidebar"))
+    if let Some(serial) = with_ui(|ui| ui.state.borrow().selected.clone()).flatten() {
+        return Ok(serial);
+    }
+    let file = devices::load();
+    let fallback = file
+        .selected
+        .clone()
+        .or_else(|| file.devices.first().map(|d| d.serial.clone()));
+    if let Some(serial) = fallback {
+        let _ = with_ui_mut(|ui| {
+            let mut st = ui.state.borrow_mut();
+            st.devices = file;
+            st.selected = Some(serial.clone());
+        });
+        return Ok(serial);
+    }
+    Err(anyhow::anyhow!("No TV selected — add one from the sidebar"))
 }
 
 fn current_tv() -> Result<Tv> {

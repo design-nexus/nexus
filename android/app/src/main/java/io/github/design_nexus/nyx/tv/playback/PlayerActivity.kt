@@ -481,9 +481,13 @@ class PlayerActivity : Activity() {
         exo.playbackParameters = PlaybackParameters(speed)
         exo.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
+                android.util.Log.d("NyxPlayer", "state=$state mode=${stream.mode} playing=${exo.isPlaying}")
                 if (state == Player.STATE_READY) spinner.visibility = View.GONE
                 if (state == Player.STATE_ENDED) onEnded()
                 report(if (exo.isPlaying) TimelineState.PLAYING else TimelineState.PAUSED)
+            }
+            override fun onRenderedFirstFrame() {
+                android.util.Log.d("NyxPlayer", "firstFrame mode=${stream.mode}")
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 report(if (isPlaying) TimelineState.PLAYING else TimelineState.PAUSED)
@@ -496,6 +500,7 @@ class PlayerActivity : Activity() {
                 }
             }
             override fun onPlayerError(error: PlaybackException) {
+                android.util.Log.e("NyxPlayer", "error mode=${stream.mode}: ${error.errorCodeName}", error)
                 if (stream.mode == StreamMode.DIRECT && !triedTranscode) {
                     triedTranscode = true
                     resumeMs = absolutePosition()
