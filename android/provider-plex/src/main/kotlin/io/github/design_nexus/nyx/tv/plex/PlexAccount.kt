@@ -55,12 +55,20 @@ class PlexAccount(private val http: PlexHttp, private val base: HttpUrl = "https
         return parseResources(a)
     }
 
-    /** The signed-in account's name, for Settings. */
-    fun userName(accountToken: String): String? {
+    data class User(val name: String?, val thumb: String?)
+
+    /** The signed-in account's name and avatar URL (plex.tv thumb). */
+    fun user(accountToken: String): User {
         val url = base.newBuilder().addPathSegments("api/v2/user").build()
-        val o = http.json(http.request(url, accountToken).get().build()) as? JSONObject ?: return null
-        return o.optString("username").ifEmpty { o.optString("title").ifEmpty { null } }
+        val o = http.json(http.request(url, accountToken).get().build()) as? JSONObject
+            ?: return User(null, null)
+        val name = o.optString("username").ifEmpty { o.optString("title").ifEmpty { null } }
+        val thumb = o.optString("thumb").ifEmpty { null }?.takeIf { it.startsWith("https://") }
+        return User(name, thumb)
     }
+
+    /** The signed-in account's name, for Settings. */
+    fun userName(accountToken: String): String? = user(accountToken).name
 
     companion object {
         private fun flag(o: JSONObject, key: String): Boolean = when (val v = o.opt(key)) {

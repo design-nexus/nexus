@@ -20,6 +20,8 @@ Tested with `scripts/launcher.sh`, snapshot `audit/snapshot-Smart_TV-20261114-14
 
 `scripts/launcher.sh disable-stock` now disables setupwraith when present; `restore` re-enables it from the snapshot. Nothing is uninstalled.
 
+Optional **Nyx TV Home helper** (AccessibilityService): Settings → TV and inputs. Off by default. When enabled in system Accessibility, it reopens Nyx TV if launcherx or setupwraith comes to the foreground. Use only when Home still opens stock chrome after `set-home` / `disable-stock`.
+
 ### Plex deep links (same day)
 
 Leanback launch and `plex://` VIEW intents open `tv.plex.app.MainActivity` (status ok). Whether a given URI starts the right title still needs a real `ratingKey` / machine id; treat direct links as experimental until then. Built-in Media3 playback is the default path.

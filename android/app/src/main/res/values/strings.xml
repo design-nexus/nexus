@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="ambient_name">Nyx TV Ambient</string>
+    <string name="a11y_fallback_name">Nyx TV Home helper</string>
+    <string name="a11y_fallback_desc">When the stock Google TV home still opens after Nyx TV is set as Home, this helper brings Nyx TV back. Turn it on only if Home keeps opening another launcher.</string>
 </resources>

@@ -1,5 +1,6 @@
 package io.github.design_nexus.nyx.tv.ui.pages
 
+import android.graphics.drawable.GradientDrawable
 import android.os.Debug
 import android.view.Gravity
 import android.view.KeyEvent
@@ -9,6 +10,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.TextView
 import io.github.design_nexus.nyx.tv.BuildConfig
 import io.github.design_nexus.nyx.tv.core.AmbientSource
 import io.github.design_nexus.nyx.tv.core.CardStyle
@@ -17,6 +19,7 @@ import io.github.design_nexus.nyx.tv.core.RowConfig
 import io.github.design_nexus.nyx.tv.core.RowType
 import io.github.design_nexus.nyx.tv.data.AppEntry
 import io.github.design_nexus.nyx.tv.data.AppRepository
+import io.github.design_nexus.nyx.tv.device.HomeKeyFallbackService
 import io.github.design_nexus.nyx.tv.device.TvSystem
 import io.github.design_nexus.nyx.tv.media.Library
 import io.github.design_nexus.nyx.tv.media.MediaKind
@@ -38,6 +41,7 @@ import io.github.design_nexus.nyx.tv.ui.dp
 import io.github.design_nexus.nyx.tv.ui.flp
 import io.github.design_nexus.nyx.tv.ui.hlinear
 import io.github.design_nexus.nyx.tv.ui.llp
+import io.github.design_nexus.nyx.tv.ui.mix
 import io.github.design_nexus.nyx.tv.ui.rounded
 import io.github.design_nexus.nyx.tv.ui.text
 import io.github.design_nexus.nyx.tv.ui.vlinear
@@ -61,23 +65,58 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
     private var pinJob: Job? = null
     private var movingRow: String? = null
     private var clearing = false
+    /** Appearance preview (not committed until Apply). */
+    private var previewTheme: String? = null
+    private var previewAccent: String? = null
+    private var restoreFocusTag: Any? = null
+    private var appearancePreviewHost: FrameLayout? = null
+    private var appearanceStatus: TextView? = null
+    private var appearanceHint: TextView? = null
+    private var appearanceApply: PillButton? = null
+    private var appearanceCancel: PillButton? = null
+    private var appearanceAccentLabel: View? = null
+    private var appearanceAccentRow: View? = null
+    private val appearanceCards = LinkedHashMap<String, LinearLayout>()
+    private val appearanceStateLabels = LinkedHashMap<String, TextView>()
+    private val appearanceAccentViews = LinkedHashMap<String, View>()
 
     /** Empties the panel without letting the focus it loses land on another section (which would redraw it mid-clear). */
     private fun clearBody() {
         clearing = true
         if (body.hasFocus()) navRows[section]?.requestFocus()
         body.removeAllViews()
+        appearancePreviewHost = null
+        appearanceStatus = null
+        appearanceHint = null
+        appearanceApply = null
+        appearanceCancel = null
+        appearanceAccentLabel = null
+        appearanceAccentRow = null
+        appearanceCards.clear()
+        appearanceStateLabels.clear()
+        appearanceAccentViews.clear()
         clearing = false
     }
 
     init {
         val title = a.text(22f, p.text, BOLD, s = "Settings")
+        title.contentDescription = "Settings"
         nav.addView(title, llp(WRAP, WRAP) { setMargins(a.dp(14), 0, 0, a.dp(12)) })
+        val firstSection = Section.entries.first()
         for (s in Section.entries) {
             val r = SettingRow(a, p, s.title)
+            r.contentDescription = s.title
             r.setOnFocusChangeListener(chain(r.onFocusChangeListener) { if (it && !clearing && section != s) { section = s; renderBody() } })
             r.setOnClickListener { focusBody() }
-            r.setOnKeyListener { _, code, e -> if (code == KeyEvent.KEYCODE_DPAD_RIGHT && e.action == KeyEvent.ACTION_DOWN) { focusBody(); true } else false }
+            r.setOnKeyListener { _, code, e ->
+                if (e.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                when (code) {
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> { focusBody(); true }
+                    // Top of Settings: never leak Up into the Home tab bar.
+                    KeyEvent.KEYCODE_DPAD_UP -> s == firstSection
+                    else -> false
+                }
+            }
             navRows[s] = r
             nav.addView(r, llp(MATCH, WRAP))
         }
@@ -106,6 +145,10 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
     }
 
     override fun onConfigChanged(c: LauncherConfig) {
+        if (section == Section.APPEARANCE) {
+            previewTheme = c.theme
+            previewAccent = c.accent
+        }
         if (section != Section.PLEX) renderBody(keepFocus = true)
     }
 
@@ -135,9 +178,56 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
         body.addView(a.text(10.5f, p.sub0, BOLD, s = t.uppercase()).apply { letterSpacing = 0.1f }, llp(WRAP, WRAP) { setMargins(a.dp(14), a.dp(14), 0, a.dp(4)) })
     }
 
+    /** Leave the body only via Left (or Back) — back to this section's sidebar entry. */
+    private fun leaveBodyToSidebar() {
+        navRows[section]?.requestFocus()
+    }
+
+    private fun inBody(v: View?): Boolean {
+        var cur: View? = v
+        while (cur != null) {
+            if (cur === body || cur === scroll) return true
+            cur = cur.parent as? View
+        }
+        return false
+    }
+
+    /**
+     * Body focus contract: Up/Down never leave the page. Left returns to this section's
+     * sidebar row. [also] can handle extra keys (and may consume Right, etc.).
+     */
+    private fun View.trapBodyKeys(also: ((code: Int, e: KeyEvent) -> Boolean)? = null) {
+        setOnKeyListener { v, code, e ->
+            if (e.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+            when (code) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> {
+                    // Allow a page to send Left somewhere else first (e.g. accents → theme list).
+                    if (also?.invoke(code, e) == true) true
+                    else { leaveBodyToSidebar(); true }
+                }
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    if (also?.invoke(code, e) == true) return@setOnKeyListener true
+                    val next = v.focusSearch(View.FOCUS_UP)
+                    !inBody(next) // consume when Up would leave the page
+                }
+                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                    if (also?.invoke(code, e) == true) return@setOnKeyListener true
+                    val next = v.focusSearch(View.FOCUS_DOWN)
+                    !inBody(next)
+                }
+                else -> also?.invoke(code, e) == true
+            }
+        }
+    }
+
     private fun toggle(t: String, d: String?, on: Boolean, set: (LauncherConfig, Boolean) -> LauncherConfig): SettingRow {
         val r = SettingRow(a, p, t, d).apply { this.on = on }
-        r.setOnClickListener { a.app.config.update { c -> set(c, !(r.on ?: false)) } }
+        r.setOnClickListener {
+            val next = !(r.on ?: false)
+            r.on = next
+            a.app.config.update { c -> set(c, next) }
+        }
+        r.trapBodyKeys()
         body.addView(r, llp(MATCH, WRAP))
         return r
     }
@@ -146,6 +236,7 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
         val r = SettingRow(a, p, t, d)
         value?.let { r.value.text = it }
         r.setOnClickListener { click() }
+        r.trapBodyKeys()
         body.addView(r, llp(MATCH, WRAP))
         return r
     }
@@ -157,12 +248,17 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
             val i = options.indexOfFirst { it.first == current }
             set(options[(i + 1) % options.size].first)
         }
+        r.trapBodyKeys()
         body.addView(r, llp(MATCH, WRAP))
         return r
     }
 
     private fun renderBody(keepFocus: Boolean = false) {
-        val focusedIndex = if (keepFocus && body.hasFocus()) (0 until body.childCount).indexOfFirst { body.getChildAt(it).hasFocus() } else -1
+        val focusedIndex = if (keepFocus && body.hasFocus() && restoreFocusTag == null) {
+            (0 until body.childCount).indexOfFirst { body.getChildAt(it).hasFocus() }
+        } else -1
+        val tag = restoreFocusTag
+        restoreFocusTag = null
         clearBody()
         pinJob?.cancel()
         val c = a.config
@@ -177,7 +273,12 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
             Section.TV -> tv()
             Section.ABOUT -> about()
         }
-        if (focusedIndex >= 0) body.post { body.getChildAt(focusedIndex.coerceAtMost(body.childCount - 1))?.let { (firstFocusable(it) ?: it).requestFocus() } }
+        when {
+            tag != null -> body.post { body.findViewWithTag<View>(tag)?.requestFocus() }
+            focusedIndex >= 0 -> body.post {
+                body.getChildAt(focusedIndex.coerceAtMost(body.childCount - 1))?.let { (firstFocusable(it) ?: it).requestFocus() }
+            }
+        }
     }
 
     // ---------- Sections ----------
@@ -186,7 +287,7 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
         heading("Home screen", "What Home shows and how it starts.")
         group("Featured")
         toggle("Featured hero", "A large backdrop for one title at the top of Home", c.heroEnabled) { x, v -> x.copy(heroEnabled = v) }
-        action("Trailers and video backgrounds", "Never played automatically", "Off") {}
+        action("Trailers and video backgrounds", "Not available yet — heroes stay still", "Coming later") {}
         group("Layout")
         val appsIndex = c.rows.indexOfFirst { it.type == RowType.FAVORITE_APPS }
         val place = when (appsIndex) { 0 -> "Top"; c.rows.lastIndex -> "Bottom"; -1 -> "Off"; else -> "After row $appsIndex" }
@@ -228,13 +329,20 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
                 else a.app.config.update { it.updateRow(r.id) { x -> x.copy(visible = !x.visible) } }
             }
             row.setOnLongClickListener { rowMenu(r); true }
-            row.setOnKeyListener { _, code, e ->
-                if (e.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener code == KeyEvent.KEYCODE_MENU && e.action == KeyEvent.ACTION_UP && run { rowMenu(r); true }
+            row.setOnKeyListener { v, code, e ->
+                if (code == KeyEvent.KEYCODE_MENU && e.action == KeyEvent.ACTION_UP) { rowMenu(r); return@setOnKeyListener true }
+                if (e.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                if (code == KeyEvent.KEYCODE_DPAD_LEFT) { leaveBodyToSidebar(); return@setOnKeyListener true }
                 if (movingRow == r.id && (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN)) {
                     a.app.config.update { it.moveRow(r.id, if (code == KeyEvent.KEYCODE_DPAD_UP) -1 else 1) }
                     body.post { focusRow(r.id) }
-                    true
-                } else false
+                    return@setOnKeyListener true
+                }
+                when (code) {
+                    KeyEvent.KEYCODE_DPAD_UP -> !inBody(v.focusSearch(View.FOCUS_UP))
+                    KeyEvent.KEYCODE_DPAD_DOWN -> !inBody(v.focusSearch(View.FOCUS_DOWN))
+                    else -> false
+                }
             }
             if (moving) row.background = rounded(0, a.dp(10).toFloat(), a.dp(2), p.accent)
             row.tag = r.id
@@ -294,11 +402,334 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
     private fun addRow(r: RowConfig) = a.app.config.update { it.copy(rows = it.rows + r) }
 
     private fun appearance(c: LauncherConfig) {
-        heading("Appearance", "Themes restyle the launcher at once.")
-        group("Theme")
-        for (t in Palette.ALL) action(t.name, null, if (t.id == c.theme) "✓ In use" else null) { a.app.config.update { it.copy(theme = t.id) } }
-        group("Accent")
-        for (name in Palette.ACCENTS.keys) action(name.replaceFirstChar { it.uppercase() }, null, if (name == c.accent) "✓ In use" else null) { a.app.config.update { it.copy(accent = name) } }
+        if (previewTheme == null) previewTheme = c.theme
+        if (previewAccent == null) previewAccent = c.accent
+
+        heading("Appearance", "↑↓ themes · → side · OK on Apply saves")
+
+        val split = hlinear(a).apply { gravity = Gravity.TOP }
+        val listCol = vlinear(a)
+        val sideCol = vlinear(a)
+
+        val themeRows = ArrayList<View>()
+        for (t in Palette.ALL) {
+            val row = themeListRow(t)
+            themeRows += row
+            listCol.addView(row, llp(MATCH, a.dp(48)) { bottomMargin = a.dp(6) })
+        }
+
+        appearanceStatus = a.text(12f, p.sub1, MEDIUM, s = "")
+        appearanceHint = a.text(11f, p.sub0, lines = 2, s = "")
+        sideCol.addView(appearanceStatus!!, llp(WRAP, WRAP) { bottomMargin = a.dp(4) })
+        sideCol.addView(appearanceHint!!, llp(MATCH, WRAP) { bottomMargin = a.dp(10) })
+
+        val previewHost = FrameLayout(a)
+        appearancePreviewHost = previewHost
+        sideCol.addView(previewHost, llp(MATCH, a.dp(180)) { bottomMargin = a.dp(12) })
+
+        val accentLabel = a.text(10.5f, p.sub0, BOLD, s = "ACCENT").apply { letterSpacing = 0.1f }
+        appearanceAccentLabel = accentLabel
+        sideCol.addView(accentLabel, llp(WRAP, WRAP) { bottomMargin = a.dp(8) })
+
+        val accents = hlinear(a).apply { gravity = Gravity.CENTER_VERTICAL }
+        appearanceAccentRow = accents
+        val accentViews = ArrayList<View>()
+        val accentNames = Palette.ACCENTS.keys.toList()
+        for (name in accentNames) {
+            val circle = View(a).apply {
+                id = View.generateViewId()
+                tag = "accent-$name"
+                isFocusable = true
+                isClickable = true
+                contentDescription = "Accent ${name.replaceFirstChar { it.uppercase() }}"
+            }
+            appearanceAccentViews[name] = circle
+            accentViews += circle
+            val last = name == accentNames.last()
+            accents.addView(circle, llp(a.dp(22), a.dp(22)) {
+                if (!last) marginEnd = a.dp(5)
+            })
+        }
+        sideCol.clipChildren = true
+        sideCol.addView(accents, llp(MATCH, WRAP) { bottomMargin = a.dp(14) })
+
+        val footer = hlinear(a)
+        val cancel = PillButton(a, p, "Cancel").also { it.id = View.generateViewId(); it.contentDescription = "Cancel" }
+        val apply = PillButton(a, p, "Apply", primary = true).also { it.id = View.generateViewId(); it.contentDescription = "Apply" }
+        appearanceCancel = cancel
+        appearanceApply = apply
+        apply.isEnabled = true
+        footer.addView(cancel, llp(WRAP, a.dp(38)) { marginEnd = a.dp(10) })
+        footer.addView(apply, llp(WRAP, a.dp(38)))
+        sideCol.addView(footer)
+
+        fun themeRow(): View = appearanceCards[previewTheme ?: c.theme] ?: themeRows.first()
+        fun themeUsesAccent(): Boolean =
+            (Palette.ALL.firstOrNull { it.id == (previewTheme ?: c.theme) } ?: Palette.MOCHA).usesAccent
+        fun sideTarget(): View = when {
+            themeUsesAccent() -> appearanceAccentViews[previewAccent ?: c.accent] ?: accentViews.first()
+            else -> apply
+        }
+
+        cancel.setOnClickListener {
+            previewTheme = c.theme
+            previewAccent = c.accent
+            paintAppearanceChrome()
+            themeRow().requestFocus()
+        }
+        apply.setOnClickListener {
+            val themeId = previewTheme ?: c.theme
+            val accentId = previewAccent ?: c.accent
+            val uses = (Palette.ALL.firstOrNull { it.id == themeId } ?: Palette.MOCHA).usesAccent
+            val sameTheme = themeId == c.theme
+            val sameAccent = !uses || accentId == c.accent
+            if (sameTheme && sameAccent) {
+                a.toast("Already applied")
+                return@setOnClickListener
+            }
+            a.app.config.update {
+                if (uses) it.copy(theme = themeId, accent = accentId)
+                else it.copy(theme = themeId)
+            }
+            a.toast("Applied")
+        }
+
+        themeRows.forEachIndexed { i, row ->
+            val prev = themeRows.getOrNull(i - 1)
+            val next = themeRows.getOrNull(i + 1)
+            row.nextFocusUpId = prev?.id ?: row.id
+            row.nextFocusDownId = next?.id ?: row.id
+            row.trapBodyKeys { code, _ ->
+                if (code == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                    sideTarget().requestFocus(); true
+                } else false
+            }
+        }
+
+        accentViews.forEachIndexed { i, circle ->
+            val name = accentNames[i]
+            val left = accentViews.getOrNull(i - 1)
+            val right = accentViews.getOrNull(i + 1)
+            circle.setOnFocusChangeListener { _, f ->
+                paintAccentCircle(name, f)
+                if (f && previewAccent != name) {
+                    previewAccent = name
+                    paintAppearanceChrome()
+                }
+            }
+            circle.setOnClickListener {
+                previewAccent = name
+                paintAppearanceChrome()
+            }
+            circle.trapBodyKeys { code, _ ->
+                when (code) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                        if (left != null) left.requestFocus() else themeRow().requestFocus()
+                        true
+                    }
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        (right ?: apply).requestFocus(); true
+                    }
+                    KeyEvent.KEYCODE_DPAD_DOWN -> {
+                        apply.requestFocus(); true
+                    }
+                    KeyEvent.KEYCODE_DPAD_UP -> {
+                        themeRow().requestFocus(); true
+                    }
+                    else -> false
+                }
+            }
+        }
+
+        cancel.trapBodyKeys { code, _ ->
+            when (code) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> { themeRow().requestFocus(); true }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> { apply.requestFocus(); true }
+                KeyEvent.KEYCODE_DPAD_UP -> { sideTarget().requestFocus(); true }
+                else -> false
+            }
+        }
+        apply.trapBodyKeys { code, _ ->
+            when (code) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> { cancel.requestFocus(); true }
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    if (themeUsesAccent()) {
+                        (appearanceAccentViews[previewAccent ?: c.accent] ?: accentViews.first()).requestFocus()
+                    } else {
+                        themeRow().requestFocus()
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+
+        // Panel content ≈ 552dp at 320dpi. Accents need 9×22 + 8×5 = 238dp.
+        // List 280 + gap 16 leaves ≈ 256dp for the side — just enough.
+        split.addView(listCol, llp(a.dp(280), WRAP) { marginEnd = a.dp(16) })
+        split.addView(sideCol, llp(0, WRAP, 1f))
+        body.addView(split, llp(MATCH, WRAP))
+        paintAppearanceChrome()
+    }
+
+    private fun paintAccentCircle(name: String, focused: Boolean) {
+        val circle = appearanceAccentViews[name] ?: return
+        val pair = Palette.ACCENTS[name] ?: return
+        val preview = Palette.of(previewTheme ?: a.config.theme, previewAccent ?: a.config.accent)
+        val color = if (preview.light) pair.second else pair.first
+        val selected = name == (previewAccent ?: a.config.accent)
+        circle.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(color)
+            when {
+                focused -> setStroke(a.dp(3), p.text)
+                selected -> setStroke(a.dp(2), alpha(p.text, 0.75f))
+                else -> setStroke(a.dp(1), alpha(p.o0, 0.35f))
+            }
+        }
+    }
+
+    private fun themeListRow(theme: Palette): LinearLayout {
+        val row = hlinear(a).apply {
+            id = View.generateViewId()
+            tag = "theme-${theme.id}"
+            isFocusable = true
+            isClickable = true
+            contentDescription = theme.name
+            setPadding(a.dp(12), 0, a.dp(12), 0)
+            minimumHeight = a.dp(48)
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val swatch = FrameLayout(a).apply {
+            addView(View(a).apply { setBackgroundColor(theme.base) }, flp(MATCH, MATCH))
+            addView(View(a).apply { setBackgroundColor(theme.mantle) }, flp(a.dp(10), MATCH, Gravity.START))
+        }
+        val name = a.text(13.5f, p.text, MEDIUM, s = theme.name)
+        val state = a.text(11f, p.sub0, s = " ")
+        appearanceStateLabels[theme.id] = state
+        row.addView(swatch, llp(a.dp(28), a.dp(28)) { marginEnd = a.dp(12) })
+        row.addView(name, llp(0, WRAP, 1f))
+        row.addView(state, llp(WRAP, WRAP) { marginStart = a.dp(8) })
+        row.setOnFocusChangeListener { _, f ->
+            paintThemeListRow(row, theme.id, f)
+            if (f && previewTheme != theme.id) {
+                previewTheme = theme.id
+                paintAppearanceChrome()
+            }
+        }
+        row.setOnClickListener {
+            previewTheme = theme.id
+            paintAppearanceChrome()
+        }
+        appearanceCards[theme.id] = row
+        return row
+    }
+
+    private fun paintThemeListRow(row: LinearLayout, themeId: String, focused: Boolean) {
+        val c = a.config
+        val theme = Palette.ALL.firstOrNull { it.id == (previewTheme ?: c.theme) } ?: Palette.MOCHA
+        val dirty = (previewTheme ?: c.theme) != c.theme ||
+            (theme.usesAccent && (previewAccent ?: c.accent) != c.accent)
+        val inUse = themeId == c.theme
+        val previewing = themeId == previewTheme && dirty
+        when {
+            focused -> {
+                row.background = rounded(p.accent, a.dp(12).toFloat())
+                (row.getChildAt(1) as? TextView)?.setTextColor(p.onAccent)
+                (row.getChildAt(2) as? TextView)?.setTextColor(alpha(p.onAccent, 0.85f))
+            }
+            previewing -> {
+                row.background = rounded(alpha(p.accent, 0.22f), a.dp(12).toFloat(), a.dp(2), p.accent)
+                (row.getChildAt(1) as? TextView)?.setTextColor(p.text)
+                (row.getChildAt(2) as? TextView)?.setTextColor(p.accent)
+            }
+            inUse -> {
+                row.background = rounded(alpha(p.o0, 0.18f), a.dp(12).toFloat(), a.dp(1), alpha(p.o0, 0.4f))
+                (row.getChildAt(1) as? TextView)?.setTextColor(p.text)
+                (row.getChildAt(2) as? TextView)?.setTextColor(p.sub0)
+            }
+            else -> {
+                row.background = rounded(alpha(p.s0, 0.55f), a.dp(12).toFloat())
+                (row.getChildAt(1) as? TextView)?.setTextColor(p.text)
+                (row.getChildAt(2) as? TextView)?.setTextColor(p.sub0)
+            }
+        }
+    }
+
+    private fun paintAppearanceChrome() {
+        val c = a.config
+        val themeId = previewTheme ?: c.theme
+        val accentId = previewAccent ?: c.accent
+        val theme = Palette.ALL.firstOrNull { it.id == themeId } ?: Palette.MOCHA
+        val preview = Palette.of(themeId, accentId)
+        val committedName = Palette.ALL.firstOrNull { it.id == c.theme }?.name ?: c.theme
+        val previewName = theme.name
+        val dirty = themeId != c.theme || (theme.usesAccent && accentId != c.accent)
+
+        appearanceStatus?.text = if (dirty) "Previewing $previewName" else "In use · $committedName"
+        appearanceHint?.text = when {
+            dirty -> "→ Apply, then OK"
+            theme.usesAccent -> "↑↓ themes · → accents"
+            else -> "↑↓ themes · → Apply"
+        }
+        appearanceApply?.alpha = if (dirty) 1f else 0.45f
+
+        val accentVis = if (theme.usesAccent) View.VISIBLE else View.GONE
+        appearanceAccentLabel?.visibility = accentVis
+        appearanceAccentRow?.visibility = accentVis
+        for (circle in appearanceAccentViews.values) {
+            circle.visibility = accentVis
+            circle.isFocusable = theme.usesAccent
+        }
+        // If focus was on an accent that just hid, land on Apply.
+        if (!theme.usesAccent && appearanceAccentViews.values.any { it.hasFocus() }) {
+            appearanceApply?.requestFocus()
+        }
+
+        val host = appearancePreviewHost ?: return
+        host.removeAllViews()
+        host.addView(miniHomePreview(preview), flp(MATCH, MATCH))
+
+        for ((id, row) in appearanceCards) {
+            paintThemeListRow(row, id, row.hasFocus())
+            val label = appearanceStateLabels[id] ?: continue
+            when {
+                id == themeId && dirty -> { label.text = "Previewing"; if (!row.hasFocus()) label.setTextColor(p.accent) }
+                id == c.theme -> { label.text = "In use"; if (!row.hasFocus()) label.setTextColor(p.sub0) }
+                else -> { label.text = " "; if (!row.hasFocus()) label.setTextColor(alpha(p.sub0, 0.01f)) }
+            }
+        }
+        if (theme.usesAccent) {
+            for (name in appearanceAccentViews.keys) {
+                paintAccentCircle(name, appearanceAccentViews[name]?.hasFocus() == true)
+            }
+        }
+    }
+
+    private fun miniHomePreview(pv: Palette): View {
+        val stage = vlinear(a).apply {
+            background = rounded(pv.base, a.dp(14).toFloat(), a.dp(1), alpha(pv.o0, 0.3f))
+            setPadding(a.dp(14), a.dp(12), a.dp(14), a.dp(12))
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        val bar = hlinear(a)
+        for (w in listOf(36, 52, 44)) {
+            bar.addView(View(a).apply { setBackgroundColor(alpha(pv.text, 0.35f)) }, llp(a.dp(w), a.dp(10)) { marginEnd = a.dp(8) })
+        }
+        stage.addView(bar, llp(MATCH, WRAP) { bottomMargin = a.dp(12) })
+        val hero = FrameLayout(a).apply {
+            background = rounded(pv.s0, a.dp(10).toFloat())
+            addView(View(a).apply { setBackgroundColor(alpha(pv.accent, 0.4f)) }, flp(a.dp(70), MATCH, Gravity.END))
+        }
+        stage.addView(hero, llp(MATCH, a.dp(72)) { bottomMargin = a.dp(12) })
+        val cards = hlinear(a)
+        for (i in 0 until 4) {
+            cards.addView(View(a).apply {
+                background = rounded(if (i == 0) mix(pv.s1, pv.accent, 0.3f) else pv.s0, a.dp(8).toFloat())
+            }, llp(a.dp(56), a.dp(78)) { marginEnd = a.dp(8) })
+        }
+        stage.addView(cards)
+        return stage
     }
 
     private fun apps(c: LauncherConfig) {
@@ -341,12 +772,15 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
         heading("Playback", "Built-in player defaults. Theme stays under Appearance.")
         val builtin = SettingRow(a, p, "Play in Nyx TV", "Gradient player. Turn off to open the Plex app instead.").apply { on = prefs.useBuiltIn }
         builtin.setOnClickListener { prefs.useBuiltIn = !prefs.useBuiltIn; builtin.on = prefs.useBuiltIn }
+        builtin.trapBodyKeys()
         body.addView(builtin, llp(MATCH, WRAP))
         val directPlay = SettingRow(a, p, "Prefer direct play", "Fall back to converting on the server when needed.").apply { on = prefs.preferDirectPlay }
         directPlay.setOnClickListener { prefs.preferDirectPlay = !prefs.preferDirectPlay; directPlay.on = prefs.preferDirectPlay }
+        directPlay.trapBodyKeys()
         body.addView(directPlay, llp(MATCH, WRAP))
         val autoplay = SettingRow(a, p, "Autoplay next episode", "After credits or the end of an episode.").apply { on = prefs.autoplayNext }
         autoplay.setOnClickListener { prefs.autoplayNext = !prefs.autoplayNext; autoplay.on = prefs.autoplayNext }
+        autoplay.trapBodyKeys()
         body.addView(autoplay, llp(MATCH, WRAP))
         action(
             "Audio sync offset",
@@ -365,6 +799,7 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
         val bridge = a.app.playback.plexApp
         val direct = SettingRow(a, p, "Open titles directly in Plex", "Only when Play in Nyx TV is off. Experimental deep links.").apply { on = bridge.directLinks }
         direct.setOnClickListener { bridge.directLinks = !bridge.directLinks; direct.on = bridge.directLinks }
+        direct.trapBodyKeys()
         body.addView(direct, llp(MATCH, WRAP))
         if (!bridge.installed) action("The Plex app isn't installed", "Needed only if you turn off Play in Nyx TV") {}
     }
@@ -462,12 +897,40 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
         val tv = TvSystem(a)
         heading("TV and inputs", "These open the TV's own controls; nothing here changes system settings by itself.")
         group("Inputs")
-        val inputs = tv.inputs()
-        if (inputs.isEmpty()) body.addView(a.text(12f, p.sub0, lines = 2, s = "This TV doesn't list its inputs to apps. Use the remote's input button or All TV settings."), llp(MATCH, WRAP) { setMargins(a.dp(14), a.dp(4), a.dp(14), 0) })
-        for (i in inputs) action(i.label, if (i.passthrough) "HDMI input" else "Tuner") { if (!tv.switchTo(i)) a.toast("${i.label} couldn't be opened") }
+        val inputs = tv.inputs().filter { it.passthrough }
+        if (inputs.isEmpty()) body.addView(a.text(12f, p.sub0, lines = 2, s = "This TV doesn't list its HDMI inputs to apps. Use the remote's input button or All TV settings."), llp(MATCH, WRAP) { setMargins(a.dp(14), a.dp(4), a.dp(14), 0) })
+        for (i in inputs) action(i.label, "HDMI") { if (!tv.switchTo(i)) a.toast("${i.label} couldn't be opened") }
         group("Settings")
-        for ((label, screen) in listOf("Network" to TvSystem.Screen.WIFI, "Bluetooth" to TvSystem.Screen.BLUETOOTH, "Picture" to TvSystem.Screen.PICTURE, "Sound" to TvSystem.Screen.SOUND, "Date and time" to TvSystem.Screen.DATE, "All TV settings" to TvSystem.Screen.ALL))
+        // Picture / Date are noisy on TCL and rarely useful from the launcher.
+        for ((label, screen) in listOf("Network" to TvSystem.Screen.WIFI, "Bluetooth" to TvSystem.Screen.BLUETOOTH, "Sound" to TvSystem.Screen.SOUND, "All TV settings" to TvSystem.Screen.ALL))
             if (tv.canOpen(screen)) action(label) { tv.open(screen) }
+        group("Home helper")
+        val wants = HomeKeyFallbackService.userWantsFallback(a)
+        val serviceOn = HomeKeyFallbackService.isServiceEnabled(a)
+        val helperValue = when {
+            wants && serviceOn -> "On"
+            wants && !serviceOn -> "Allowed here · turn on in Accessibility"
+            else -> "Off"
+        }
+        action(
+            "Bring Nyx TV back if stock Home opens",
+            "For TVs that still open Google TV home after Nyx is set as Home. Off by default.",
+            helperValue,
+        ) {
+            if (!wants) {
+                HomeKeyFallbackService.setUserWantsFallback(a, true)
+                if (!serviceOn) {
+                    a.toast("Enable “Nyx TV Home helper” in Accessibility")
+                    HomeKeyFallbackService.openAccessibilitySettings(a)
+                }
+            } else {
+                HomeKeyFallbackService.setUserWantsFallback(a, false)
+            }
+            renderBody(keepFocus = true)
+        }
+        if (wants && !serviceOn) action("Open Accessibility settings", "Enable Nyx TV Home helper there") {
+            HomeKeyFallbackService.openAccessibilitySettings(a)
+        }
     }
 
     private fun about() {
@@ -475,7 +938,12 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
         val prefs = a.getSharedPreferences("diagnostics", android.content.Context.MODE_PRIVATE)
         val mem = Debug.MemoryInfo().also { Debug.getMemoryInfo(it) }
         action("Nyx TV ${BuildConfig.VERSION_NAME}", "Build ${BuildConfig.VERSION_CODE}${if (BuildConfig.DEBUG) " · debug" else ""}") {}
-        action("Home app", if (AppRepository.isHomeDefault(a)) "Nyx TV is the TV's home app" else "Another app is the home app; Nyx TV Manager can change that") {}
+        val homeLine = when {
+            AppRepository.isHomeDefault(a) -> "Nyx TV is the TV's home app"
+            HomeKeyFallbackService.needed(a) -> "Another app is home — use launcher scripts or the Home helper under TV and inputs"
+            else -> "Another app is the home app"
+        }
+        action("Home app", homeLine) {}
         action("This TV", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} · Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})") {}
         group("Diagnostics")
         action("Memory", "Proportional set size of Nyx TV right now", "${mem.totalPss / 1024} MB") {}

@@ -102,9 +102,13 @@ class SettingRow(ctx: Context, private val p: Palette, title: String, desc: Stri
         if (desc != null) col.addView(this.desc, llp(WRAP, WRAP) { topMargin = dp(3) })
         addView(col, llp(0, WRAP, 1f))
         addView(value, llp(WRAP, WRAP) { marginStart = dp(12) })
-        toggleBox.addView(toggle, flp(dp(36), dp(20), Gravity.CENTER_VERTICAL))
-        toggleBox.addView(knob, flp(dp(15), dp(15), Gravity.CENTER_VERTICAL))
-        addView(toggleBox, llp(dp(36), dp(20)) { marginStart = dp(12) })
+        toggleBox.addView(toggle, flp(MATCH, MATCH))
+        toggleBox.addView(knob, FrameLayout.LayoutParams(dp(16), dp(16)).apply {
+            gravity = Gravity.CENTER_VERTICAL or Gravity.START
+            marginStart = dp(2)
+            marginEnd = dp(2)
+        })
+        addView(toggleBox, llp(dp(40), dp(22)) { marginStart = dp(12) })
         isFocusable = true
         isClickable = true
         paint(false)
@@ -119,10 +123,14 @@ class SettingRow(ctx: Context, private val p: Palette, title: String, desc: Stri
         val o = on
         toggleBox.visibility = if (o == null) GONE else VISIBLE
         if (o != null) {
-            toggle.background = rounded(if (o) (if (focused) p.base else p.accent) else alpha(p.o0, 0.5f), dp(10).toFloat())
-            knob.background = rounded(if (o) (if (focused) p.text else p.onAccent) else p.sub1, dp(7.5).toFloat())
-            (knob.layoutParams as FrameLayout.LayoutParams).marginStart = if (o) dp(18.5) else dp(2.5)
-            knob.requestLayout()
+            toggle.background = rounded(if (o) (if (focused) p.base else p.accent) else alpha(p.o0, 0.5f), dp(11).toFloat())
+            knob.background = rounded(if (o) (if (focused) p.text else p.onAccent) else p.sub1, dp(8).toFloat())
+            // New LayoutParams so the knob actually moves (mutating margin alone often no-ops).
+            knob.layoutParams = FrameLayout.LayoutParams(dp(16), dp(16)).apply {
+                gravity = Gravity.CENTER_VERTICAL or (if (o) Gravity.END else Gravity.START)
+                marginStart = dp(2)
+                marginEnd = dp(2)
+            }
         }
     }
 }

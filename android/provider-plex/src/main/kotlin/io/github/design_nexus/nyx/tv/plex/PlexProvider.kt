@@ -41,6 +41,8 @@ data class PlexSession(
     val lastGood: String? = null,
     val accountToken: String? = null,
     val userName: String? = null,
+    /** HTTPS avatar from plex.tv (`/api/v2/user` thumb). */
+    val userThumb: String? = null,
 ) {
     override fun toString(): String = "PlexSession($serverName, $serverId, ${addresses.size} addresses)"
 }
@@ -80,13 +82,29 @@ class PlexProvider(
 
     /** Connect to [server] through its best connection and remember it. */
     suspend fun choose(server: PlexServer, accountToken: String?): String = mutex.withLock {
-        val name = io { accountToken?.let { runCatching { account.userName(it) }.getOrNull() } }
+        val user = io { accountToken?.let { runCatching { account.user(it) }.getOrNull() } }
         val c = probe(server.connections.groupBy { it.priority }.toSortedMap().values.map { g -> g.map { it.url } }, server.id, server.token)
             ?: throw ProviderUnavailable("${server.name} can't be reached")
-        val s = PlexSession(server.id, server.name, server.token, server.connections.map { it.url.toString() }, c.base.toString(), accountToken, name)
+        val s = PlexSession(
+            server.id, server.name, server.token, server.connections.map { it.url.toString() }, c.base.toString(),
+            accountToken, user?.name, user?.thumb,
+        )
         store.save(s)
         online(c)
         c.name
+    }
+
+    /** Refresh name/avatar from plex.tv when we have an account token but no thumb yet. */
+    suspend fun refreshUserProfile() {
+        val s = store.load() ?: return
+        val token = s.accountToken ?: return
+        if (s.userThumb != null && s.userName != null) return
+        val user = io { runCatching { account.user(token) }.getOrNull() } ?: return
+        val next = s.copy(
+            userName = user.name ?: s.userName,
+            userThumb = user.thumb ?: s.userThumb,
+        )
+        if (next != s) store.save(next)
     }
 
     /** A server by address and token, for servers the account can't list. */

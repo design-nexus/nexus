@@ -70,7 +70,9 @@ class SecureSessionStore(context: Context) : PlexSessionStore {
     private fun encode(s: PlexSession) = JSONObject().apply {
         put("serverId", s.serverId); put("serverName", s.serverName); put("serverToken", s.serverToken)
         put("addresses", JSONArray(s.addresses)); s.lastGood?.let { put("lastGood", it) }
-        s.accountToken?.let { put("accountToken", it) }; s.userName?.let { put("userName", it) }
+        s.accountToken?.let { put("accountToken", it) }
+        s.userName?.let { put("userName", it) }
+        s.userThumb?.let { put("userThumb", it) }
     }.toString()
 
     private fun decode(t: String): PlexSession {
@@ -84,6 +86,7 @@ class SecureSessionStore(context: Context) : PlexSessionStore {
             lastGood = o.optString("lastGood").ifEmpty { null },
             accountToken = o.optString("accountToken").ifEmpty { null },
             userName = o.optString("userName").ifEmpty { null },
+            userThumb = o.optString("userThumb").ifEmpty { null },
         )
     }
 

@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.ColorStateList
+import android.graphics.Outline
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
 import android.os.Bundle
@@ -17,6 +18,7 @@ import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -82,12 +84,16 @@ class HomeActivity : Activity() {
     private val tabs = LinkedHashMap<String, TextView>()
     private lateinit var searchBtn: ImageView
     private lateinit var gearBtn: ImageView
-    private lateinit var avatar: TextView
+    private lateinit var avatar: FrameLayout
+    private lateinit var avatarImage: ImageView
+    private lateinit var avatarLetter: TextView
 
     private val stack = ArrayList<Page>()
     private val roots = HashMap<String, Page>()
     private var backdropReq: Disposable? = null
     private var backdropPath: String? = null
+    private var avatarReq: Disposable? = null
+    private var avatarThumbLoaded: String? = null
     private val handler = Handler(Looper.getMainLooper())
     private var overlay: View? = null
     private var overlayReturn: View? = null
@@ -172,6 +178,7 @@ class HomeActivity : Activity() {
                 setPadding(dp(11), 0, dp(11), 0)
                 isFocusable = true
                 isClickable = true
+                contentDescription = label
                 setOnClickListener { showRoot(id, focus = true) }
                 setOnFocusChangeListener { _, f ->
                     paintTab(this, id, f)
@@ -184,35 +191,69 @@ class HomeActivity : Activity() {
         bar.addView(View(this), llp(0, 1, 1f))
         status = text(11f, p.sub0).apply { visibility = View.GONE }
         bar.addView(status, llp(WRAP, WRAP) { marginEnd = dp(14) })
-        searchBtn = iconButton(R.drawable.ic_search) { showRoot("search", focus = true) }
-        gearBtn = iconButton(R.drawable.ic_gear) { openQuickSettings() }
+        searchBtn = iconButton(R.drawable.ic_search, "Search") { showRoot("search", focus = true) }
+        gearBtn = iconButton(R.drawable.ic_gear, "Quick settings") { openQuickSettings() }
         bar.addView(searchBtn, llp(dp(30), dp(30)) { marginEnd = dp(8) })
         bar.addView(gearBtn, llp(dp(30), dp(30)) { marginEnd = dp(10) })
-        avatar = text(12f, 0xFF1E1E2E.toInt(), BOLD, s = "N").apply {
-            gravity = Gravity.CENTER
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFFFAB387.toInt(), 0xFFF5C2E7.toInt())).apply { shape = GradientDrawable.OVAL }
+        avatarLetter = text(12f, 0xFF1E1E2E.toInt(), BOLD, s = "N").apply { gravity = Gravity.CENTER }
+        avatarImage = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            visibility = View.GONE
+            outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(view: View, outline: Outline) =
+                    outline.setOval(0, 0, view.width.coerceAtLeast(1), view.height.coerceAtLeast(1))
+            }
+            clipToOutline = true
+        }
+        avatar = FrameLayout(this).apply {
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(0xFFFAB387.toInt(), 0xFFF5C2E7.toInt()),
+            ).apply { shape = GradientDrawable.OVAL }
             isFocusable = true
             isClickable = true
+            contentDescription = "Profile and Plex settings"
             setOnClickListener { push(SettingsPage(this@HomeActivity, SettingsPage.Section.PLEX)) }
-            setOnFocusChangeListener { v, f -> v.foreground = if (f) rounded(0, dp(14).toFloat(), dp(2), palette.text) else null }
+            setOnFocusChangeListener { v, f ->
+                v.foreground = if (f) rounded(0, dp(14).toFloat(), dp(2), palette.text) else null
+            }
+            addView(avatarLetter, flp(MATCH, MATCH))
+            addView(avatarImage, flp(MATCH, MATCH))
         }
         bar.addView(avatar, llp(dp(28), dp(28)) { marginEnd = dp(12) })
         clock = text(15f, p.text, MEDIUM)
         bar.addView(clock)
         updateClock()
+        paintAvatar()
         return bar
     }
 
-    private fun iconButton(icon: Int, click: () -> Unit) = ImageView(this).apply {
+    private fun iconButton(icon: Int, label: String, click: () -> Unit) = ImageView(this).apply {
         setImageResource(icon)
         setPadding(dp(6), dp(6), dp(6), dp(6))
         imageTintList = ColorStateList.valueOf(palette.sub1)
         isFocusable = true
         isClickable = true
+        contentDescription = label
         setOnClickListener { click() }
         setOnFocusChangeListener { _, f ->
             background = if (f) rounded(palette.text, dp(15).toFloat()) else null
             imageTintList = ColorStateList.valueOf(if (f) palette.base else palette.sub1)
+        }
+    }
+
+    /** Top chrome must not steal focus while a pushed page (Settings, details) is open. */
+    private fun updateChromeFocusable() {
+        if (!::searchBtn.isInitialized) return
+        val allow = stack.size <= 1
+        tabs.values.forEach { it.isFocusable = allow; it.isClickable = allow }
+        searchBtn.isFocusable = allow
+        searchBtn.isClickable = allow
+        gearBtn.isFocusable = allow
+        gearBtn.isClickable = allow
+        if (::avatar.isInitialized) {
+            avatar.isFocusable = allow
+            avatar.isClickable = allow
         }
     }
 
@@ -281,6 +322,7 @@ class HomeActivity : Activity() {
         pageHost.removeAllViews()
         (page.view.parent as? FrameLayout)?.removeView(page.view)
         pageHost.addView(page.view, flp(MATCH, MATCH))
+        updateChromeFocusable()
         refreshTabs()
         page.onShow()
         if (focus) page.view.post { page.focusDefault() }
@@ -374,6 +416,9 @@ class HomeActivity : Activity() {
         closeOverlay()
         overlayReturn = currentFocus
         overlay = v
+        // Block D-pad from landing on Home/settings under the scrim while an overlay is up.
+        pageHost.descendantFocusability = android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        if (::nav.isInitialized) nav.descendantFocusability = android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS
         overlayHost.addView(v, flp(MATCH, MATCH))
     }
 
@@ -381,6 +426,8 @@ class HomeActivity : Activity() {
         val v = overlay ?: return
         overlayHost.removeView(v)
         overlay = null
+        if (::pageHost.isInitialized) pageHost.descendantFocusability = android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS
+        if (::nav.isInitialized) nav.descendantFocusability = android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS
         overlayReturn?.takeIf { it.isAttachedToWindow }?.requestFocus()
         overlayReturn = null
     }
@@ -461,7 +508,17 @@ class HomeActivity : Activity() {
             addDataScheme("package")
         })
         handler.post(tick)
-        statusJob = scope.launch { app.plex.status.collectLatest { showStatus(it) } }
+        statusJob = scope.launch {
+            app.plex.status.collectLatest { s ->
+                showStatus(s)
+                if (s is ProviderStatus.Online || s is ProviderStatus.Offline || s is ProviderStatus.Connecting) {
+                    launch {
+                        app.plex.refreshUserProfile()
+                        paintAvatar()
+                    }
+                }
+            }
+        }
         if (::root.isInitialized) stack.lastOrNull()?.onShow()
     }
 
@@ -510,21 +567,54 @@ class HomeActivity : Activity() {
                 status.visibility = View.GONE
             }
         }
-        val name = app.plex.session?.userName
-        avatar.text = name?.firstOrNull()?.uppercase() ?: "N"
+        paintAvatar()
         stack.forEach { if (it is HomePage) it.onStatus(s) }
+    }
+
+    private fun paintAvatar() {
+        if (!::avatarLetter.isInitialized) return
+        val session = app.plex.session
+        val name = session?.userName
+        avatarLetter.text = name?.firstOrNull()?.uppercase()?.toString() ?: "N"
+        avatarLetter.visibility = View.VISIBLE
+        val thumb = session?.userThumb
+        if (thumb.isNullOrBlank()) {
+            avatarReq?.dispose()
+            avatarReq = null
+            avatarThumbLoaded = null
+            avatarImage.setImageDrawable(null)
+            avatarImage.visibility = View.GONE
+            return
+        }
+        if (thumb == avatarThumbLoaded && avatarImage.drawable != null) {
+            avatarImage.visibility = View.VISIBLE
+            return
+        }
+        val px = dp(28)
+        avatarImage.visibility = View.VISIBLE
+        avatarReq?.dispose()
+        avatarReq = app.images.enqueue(
+            ImageRequest.Builder(this)
+                .data(thumb)
+                .size(px, px)
+                .target(avatarImage)
+                .build(),
+        )
+        avatarThumbLoaded = thumb
     }
 
     private fun onConfig(c: LauncherConfig) {
         val old = config
         config = c
         if (c.theme != old.theme || c.accent != old.accent) {
+            val reopenAppearance = stack.any { it is SettingsPage }
             palette = Palette.of(c.theme, c.accent)
             roots.clear()
             val tab = currentRootTab() ?: "home"
             build()
-            showRoot(tab, focus = true)
-            if (tab != "home" || stack.size > 0) refreshTabs()
+            showRoot(tab, focus = !reopenAppearance)
+            if (reopenAppearance) push(SettingsPage(this, SettingsPage.Section.APPEARANCE))
+            refreshTabs()
             return
         }
         updateClock()

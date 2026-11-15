@@ -60,6 +60,12 @@ class DetailsPage(a: HomeActivity, private var item: MediaItem) : Page(a), RowHo
     private val credits = a.text(12f, palette.sub0, lines = 2)
     private val buttons = hlinear(a).apply { clipChildren = false }
     private val seasons = hlinear(a).apply { clipChildren = false }
+    private val seasonScroll = HorizontalScrollView(a).apply {
+        isHorizontalScrollBarEnabled = false
+        clipChildren = false
+        visibility = View.GONE
+        addView(seasons)
+    }
     private val list = RecyclerView(a)
     private val adapter = RowsAdapter(this)
     private var details: MediaDetails? = null
@@ -67,6 +73,7 @@ class DetailsPage(a: HomeActivity, private var item: MediaItem) : Page(a), RowHo
     private var currentSeason: MediaItem? = null
     private var episodes: List<MediaItem> = emptyList()
     private var playTarget: MediaItem? = null
+    private val column = vlinear(a)
 
     init {
         info.clipChildren = false
@@ -77,15 +84,19 @@ class DetailsPage(a: HomeActivity, private var item: MediaItem) : Page(a), RowHo
         info.addView(summary, llp(a.dp(520), WRAP) { topMargin = a.dp(12) })
         info.addView(credits, llp(a.dp(520), WRAP) { topMargin = a.dp(8) })
         info.addView(buttons, llp(WRAP, WRAP) { topMargin = a.dp(18) })
-        root.addView(info, flp(a.dp(640), WRAP).apply { setMargins(a.dp(48), a.dp(80), 0, 0) })
-        val sc = HorizontalScrollView(a).apply { isHorizontalScrollBarEnabled = false; clipChildren = false; addView(seasons) }
-        root.addView(sc, flp(MATCH, WRAP).apply { setMargins(a.dp(44), a.dp(330), a.dp(48), 0) })
+        // Season chips sit under Play — never overlaid at a fixed Y that covers the buttons.
+        column.addView(info, llp(a.dp(640), WRAP))
+        column.addView(seasonScroll, llp(MATCH, WRAP) { topMargin = a.dp(16) })
         list.layoutManager = LinearLayoutManager(a)
         list.adapter = adapter
         list.itemAnimator = null
         list.clipChildren = false
         list.clipToPadding = false
-        root.addView(list, flp(MATCH, MATCH).apply { topMargin = a.dp(362) })
+        list.setPadding(0, a.dp(8), 0, a.dp(24))
+        column.addView(list, llp(MATCH, 0, 1f))
+        root.addView(column, flp(MATCH, MATCH).apply { setMargins(a.dp(48), a.dp(80), a.dp(48), 0) })
+        // Season row and episode list use full width; pull season/list left margin back to match home rows.
+        seasonScroll.setPadding(0, 0, 0, 0)
         render()
         load()
     }
@@ -198,8 +209,14 @@ class DetailsPage(a: HomeActivity, private var item: MediaItem) : Page(a), RowHo
             val label = s.title + (s.unwatchedCount?.takeIf { it > 0 }?.let { "  ·  $it new" } ?: "")
             val c = Chip(a, palette, label, s == currentSeason)
             c.setOnClickListener { currentSeason = s; repaintSeasons(); loadEpisodes(s) }
+            c.setOnKeyListener { _, code, e ->
+                if (code == KeyEvent.KEYCODE_DPAD_UP && e.action == KeyEvent.ACTION_DOWN) {
+                    buttons.getChildAt(0)?.requestFocus(); true
+                } else false
+            }
             seasons.addView(c, llp(WRAP, a.dp(28)) { marginStart = a.dp(4); marginEnd = a.dp(4) })
         }
+        seasonScroll.visibility = if (seasonItems.isEmpty()) View.GONE else View.VISIBLE
     }
 
     private fun repaintSeasons() {

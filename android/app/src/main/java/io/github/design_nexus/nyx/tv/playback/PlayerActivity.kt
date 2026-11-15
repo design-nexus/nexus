@@ -248,8 +248,8 @@ class PlayerActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END
         }
-        subsBtn = squareIcon(R.drawable.ic_cc) { menuFromSettings = false; openMenu(Menu.SUBS) }
-        settingsBtn = squareIcon(R.drawable.ic_gear) {
+        subsBtn = squareIcon(R.drawable.ic_cc, "Subtitles") { menuFromSettings = false; openMenu(Menu.SUBS) }
+        settingsBtn = squareIcon(R.drawable.ic_gear, "Settings") {
             menuFromSettings = false
             settingsFocusIndex = 4
             openMenu(Menu.SETTINGS)
@@ -283,6 +283,7 @@ class PlayerActivity : Activity() {
         scrubShell = FrameLayout(this).apply {
             isFocusable = true
             isClickable = true
+            contentDescription = "Seek bar"
             setPadding(0, dp(12), 0, dp(12))
             clipChildren = false
             clipToPadding = false
@@ -345,7 +346,7 @@ class PlayerActivity : Activity() {
         setColor(color)
     }
 
-    private fun squareIcon(res: Int, action: () -> Unit): ImageView = ImageView(this).apply {
+    private fun squareIcon(res: Int, label: String, action: () -> Unit): ImageView = ImageView(this).apply {
         setImageResource(res)
         imageTintList = ColorStateList.valueOf(Color.WHITE)
         background = rounded(alpha(Color.WHITE, 0.14f), dp(12).toFloat())
@@ -353,6 +354,7 @@ class PlayerActivity : Activity() {
         setPadding(dp(8), dp(8), dp(8), dp(8))
         isFocusable = true
         isClickable = true
+        contentDescription = label
         setOnFocusChangeListener { _, f ->
             background = rounded(if (f) Color.WHITE else alpha(Color.WHITE, 0.14f), dp(12).toFloat())
             imageTintList = ColorStateList.valueOf(if (f) Color.BLACK else Color.WHITE)
