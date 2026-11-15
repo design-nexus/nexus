@@ -1,0 +1,23 @@
+[package]
+name = "nyx-tv-manager"
+version = "0.1.0"
+description = "Install and manage Nyx TV on Android TVs over adb"
+license.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "nyx-tv-manager"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+async-channel = "2"
+gtk = { version = "0.11", package = "gtk4", features = ["v4_18"] }
+nyx-tv-adb = { path = "../../crates/nyx-tv-adb" }
+nyx-tv-device = { path = "../../crates/nyx-tv-device" }
+nyx-theme = { git = "https://github.com/design-nexus/nyx-design.git", rev = "fc7320da1944c6b69e9373ab201b881e81bff9bb" }
+nyx-ui = { git = "https://github.com/design-nexus/nyx-design.git", rev = "fc7320da1944c6b69e9373ab201b881e81bff9bb" }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"

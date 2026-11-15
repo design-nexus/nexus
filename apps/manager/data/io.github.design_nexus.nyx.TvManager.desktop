@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=TV Manager
+GenericName=TV Manager
+Comment=Install and manage Nyx TV on Android TVs over adb
+Exec=nyx-tv-manager
+Icon=io.github.design_nexus.nyx.TvManager
+Terminal=false
+Categories=Utility;GTK;
+Keywords=tv;android;adb;plex;launcher;
+StartupNotify=true
+StartupWMClass=io.github.design_nexus.nyx.TvManager
+SingleMainWindow=true

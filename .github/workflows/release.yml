@@ -1,0 +1,55 @@
+name: Release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Version tag (e.g. v0.1.0)
+        required: true
+        default: v0.1.0
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install GTK build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libglib2.0-dev pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build Manager
+        run: cargo build --release -p nyx-tv-manager
+      - name: Build Android APK
+        working-directory: android
+        env:
+          NYX_TV_KEYSTORE_BASE64: ${{ secrets.NYX_TV_KEYSTORE_BASE64 }}
+          NYX_TV_KEYSTORE_PASSWORD: ${{ secrets.NYX_TV_KEYSTORE_PASSWORD }}
+          NYX_TV_KEY_ALIAS: ${{ secrets.NYX_TV_KEY_ALIAS }}
+          NYX_TV_KEY_PASSWORD: ${{ secrets.NYX_TV_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          if [[ -n "${NYX_TV_KEYSTORE_BASE64:-}" ]]; then
+            echo "Signing secrets present — assembleRelease (wire signingConfigs in Gradle to use them)."
+            ./gradlew :app:assembleRelease --no-daemon
+          else
+            echo "No signing secrets — assembleDebug only (unsigned release path skipped)."
+            ./gradlew :app:assembleDebug --no-daemon
+          fi
+      - name: Stage artifacts
+        run: |
+          mkdir -p dist
+          cp target/release/nyx-tv-manager dist/
+          find android/app/build/outputs/apk -name '*.apk' -exec cp {} dist/ \;
+          ls -la dist
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nyx-tv-${{ inputs.tag }}
+          path: dist/

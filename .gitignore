@@ -1,9 +1,13 @@
 audit/
+/target/
 
 # Android / Gradle
 .gradle/
 **/build/
 local.properties
+keystore.properties
+*.jks
+*.keystore
 *.apk
 *.ap_
 *.aab

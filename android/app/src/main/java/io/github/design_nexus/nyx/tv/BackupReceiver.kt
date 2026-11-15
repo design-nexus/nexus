@@ -9,7 +9,7 @@ import kotlinx.coroutines.runBlocking
 import java.io.File
 
 /**
- * Settings backups for Nyx TV Manager, over adb:
+ * Settings backups for TV Manager, over adb:
  *
  *   am broadcast -n <pkg>/.BackupReceiver -a io.github.design_nexus.nyx.tv.EXPORT
  *   adb pull /sdcard/Android/data/<pkg>/files/nyx-tv-settings.json

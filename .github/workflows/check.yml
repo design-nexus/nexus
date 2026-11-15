@@ -1,0 +1,41 @@
+name: Check
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No local path deps
+        run: |
+          if grep -R 'file://' --include='Cargo.toml' .; then
+            echo 'Local file:// Cargo deps are not allowed in CI.'
+            exit 1
+          fi
+      - name: Install GTK build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libglib2.0-dev pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: cargo test
+        run: cargo test --workspace
+      - name: cargo clippy
+        run: cargo clippy --workspace -- -D warnings
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Gradle lint + unit tests
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:lintDebug :app:testDebugUnitTest --no-daemon

@@ -1,0 +1,186 @@
+# Bedroom TCL Google TV (BeyondTV4) — observed 2026-11-14/15 via audit + pm path.
+# Manager intersects this catalog with packages actually installed on the TV.
+# Only `optional` is auto-selected; `dependent` is opt-in; `protected` is never disabled.
+
+fingerprint = "TCL/G03_4K_US_NF_DB/BeyondTV4:11/RP1A.200622.001/AR26:user/release-keys"
+model = "BeyondTV4"
+
+[[package]]
+package = "com.tcl.channelplus"
+title = "TCL Channel Plus"
+kind = "optional"
+description = "TCL Channel Plus / Live promo tiles"
+
+[[package]]
+package = "com.tcl.tv.tclchannel"
+title = "TCL Channel"
+kind = "optional"
+description = "TCL Channel app"
+
+[[package]]
+package = "com.tcl.tv.plus"
+title = "TCL TV Plus"
+kind = "optional"
+description = "TCL TV Plus"
+
+[[package]]
+package = "com.tcl.waterfall.overseas"
+title = "TCL Waterfall"
+kind = "optional"
+description = "TCL Waterfall overseas content"
+
+[[package]]
+package = "com.tcl.dashboard"
+title = "TCL Dashboard"
+kind = "optional"
+description = "TCL Dashboard chrome"
+
+[[package]]
+package = "com.tcl.bi"
+title = "TCL Analytics (BI)"
+kind = "optional"
+description = "TCL analytics / BI"
+
+[[package]]
+package = "com.tcl.esticker"
+title = "TCL eSticker"
+kind = "optional"
+description = "TCL eSticker"
+
+[[package]]
+package = "com.tcl.messagebox"
+title = "TCL Message Box"
+kind = "optional"
+description = "TCL message box"
+
+[[package]]
+package = "com.tcl.gallery"
+title = "TCL Gallery"
+kind = "optional"
+description = "TCL Gallery Abroad"
+
+[[package]]
+package = "com.tcl.usercenter"
+title = "TCL User Center"
+kind = "optional"
+description = "TCL account / user center"
+
+[[package]]
+package = "com.tcl.suspension"
+title = "TCL Suspension"
+kind = "optional"
+description = "TCL Quick Panel / suspension"
+
+[[package]]
+package = "com.tcl.ui_mediaCenter"
+title = "TCL Media Center"
+kind = "optional"
+description = "TCL Media Center"
+
+[[package]]
+package = "com.tcl.partnercustomizer"
+title = "TCL Partner customizer"
+kind = "optional"
+description = "Customizes Google launcher partner chrome"
+
+[[package]]
+package = "com.google.android.play.games"
+title = "Google Play Games"
+kind = "optional"
+description = "Play Games on TV"
+
+[[package]]
+package = "com.google.android.youtube.tvmusic"
+title = "YouTube Music (TV)"
+kind = "optional"
+description = "YouTube Music for Android TV"
+
+[[package]]
+package = "com.google.android.partnersetup"
+title = "Google Partner Setup"
+kind = "optional"
+description = "Google partner setup (system_ext)"
+
+[[package]]
+package = "com.tcl.assistant"
+title = "TCL Assistant"
+kind = "dependent"
+description = "Voice assistant shell — may affect remote mic UX"
+
+[[package]]
+package = "com.tcl.smartalexa"
+title = "TCL Alexa"
+kind = "dependent"
+description = "Alexa on TCL — only if you use it"
+
+[[package]]
+package = "com.google.android.tv.assistant"
+title = "Google TV Assistant"
+kind = "dependent"
+description = "Google Assistant / LED service path on this build"
+
+[[package]]
+package = "com.google.android.youtube.tv"
+title = "YouTube"
+kind = "dependent"
+description = "YouTube for Android TV — keep if you watch YouTube"
+
+[[package]]
+package = "com.android.vending"
+title = "Google Play Store"
+kind = "protected"
+description = "Play Store"
+
+[[package]]
+package = "com.google.android.apps.mediashell"
+title = "Chromecast built-in"
+kind = "protected"
+description = "Cast / mediashell"
+
+[[package]]
+package = "com.tcl.versionUpdateApp"
+title = "TCL System update"
+kind = "protected"
+description = "OTA / system update"
+
+[[package]]
+package = "com.tcl.tv"
+title = "TCL TV app"
+kind = "protected"
+description = "Live TV app"
+
+[[package]]
+package = "com.tcl.tvinput"
+title = "TCL TV input"
+kind = "protected"
+description = "HDMI / TV input"
+
+[[package]]
+package = "com.tcl.settings"
+title = "TCL Settings"
+kind = "protected"
+description = "TCL settings"
+
+[[package]]
+package = "com.google.android.apps.tv.launcherx"
+title = "Google TV home"
+kind = "protected"
+description = "Stock launcher — use Launcher restore, not Debloat"
+
+[[package]]
+package = "com.google.android.tungsten.setupwraith"
+title = "Google TV setup"
+kind = "protected"
+description = "Setup / recovery HOME contender"
+
+[[package]]
+package = "io.github.design_nexus.nyx.tv"
+title = "Nyx TV"
+kind = "protected"
+description = "Nyx TV launcher"
+
+[[package]]
+package = "io.github.design_nexus.nyx.tv.debug"
+title = "Nyx TV (debug)"
+kind = "protected"
+description = "Nyx TV debug build"

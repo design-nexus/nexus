@@ -951,6 +951,6 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
         action("Artwork cache", null, "${(a.app.images.diskCache?.size ?: 0) / (1024 * 1024)} MB on disk · ${(a.app.images.memoryCache?.size ?: 0) / (1024 * 1024)} MB in memory") {}
         action("Clear artwork cache") { a.app.images.memoryCache?.clear(); a.app.images.diskCache?.clear(); renderBody() }
         group("Privacy")
-        body.addView(a.text(12f, p.sub0, lines = 4, s = "No telemetry, no ads, no accounts other than Plex. Settings backups made by Nyx TV Manager never include your Plex sign-in."), llp(MATCH, WRAP) { setMargins(a.dp(14), a.dp(4), a.dp(14), 0) })
+        body.addView(a.text(12f, p.sub0, lines = 4, s = "No telemetry, no ads, no accounts other than Plex. Settings backups made by TV Manager never include your Plex sign-in."), llp(MATCH, WRAP) { setMargins(a.dp(14), a.dp(4), a.dp(14), 0) })
     }
 }

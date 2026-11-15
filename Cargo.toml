@@ -1,0 +1,13 @@
+[workspace]
+resolver = "3"
+members = ["crates/nyx-tv-adb", "crates/nyx-tv-device", "apps/manager"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+authors = ["Ken Smith"]
+repository = "https://github.com/design-nexus/nyx-tv"
+
+[profile.release]
+lto = "thin"
+strip = true

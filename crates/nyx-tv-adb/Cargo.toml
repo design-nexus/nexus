@@ -1,0 +1,12 @@
+[package]
+name = "nyx-tv-adb"
+version = "0.1.0"
+description = "Thin wrapper around the system adb for TV Manager"
+license.workspace = true
+edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow = "1"
+thiserror = "2"
