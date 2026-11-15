@@ -25,7 +25,8 @@ resumed() { a dumpsys activity activities | sed -n 's/.*mResumedActivity: Activi
 
 case $cmd in
   snapshot)
-    model=$(a getprop ro.product.model | tr ' ' '_'); fp=$(a getprop ro.build.fingerprint)
+    mkdir -p audit
+    model=$(a getprop ro.product.model | tr ' /' '__'); fp=$(a getprop ro.build.fingerprint)
     out="audit/snapshot-${model}-$(date +%Y%m%d-%H%M%S).env"
     {
       echo "fingerprint=$fp"
@@ -53,19 +54,25 @@ case $cmd in
     a input keyevent KEYCODE_HOME; sleep 2
     r=$(resumed); echo "Home button -> $r"; [[ $r == "$comp" || $r == ${pkg}/* ]] || { echo "FAIL: Home didn't open $pkg"; ok=1; }
     sp=$(a pidof $STOCK || true); echo "stock launcher process: ${sp:-not running}"
-    a am start -W -a android.settings.SETTINGS | grep -E 'Status|Activity:' ; sleep 2
+    a am start -W -a android.settings.SETTINGS | grep -E 'Status|Activity:' || true; sleep 2
     echo "Settings -> $(resumed)"
-    a am start -W -n com.android.vending/com.google.android.finsky.tvmainactivity.TvMainActivity | grep -E 'Status' ; sleep 3
+    a am start -W -n com.android.vending/com.google.android.finsky.tvmainactivity.TvMainActivity | grep -E 'Status' || true; sleep 3
     echo "Play Store -> $(resumed)"
     a input keyevent KEYCODE_HOME; sleep 2
     r=$(resumed); echo "Home again -> $r"; [[ $r == ${pkg}/* ]] || { echo "FAIL: Home didn't return to $pkg"; ok=1; }
     exit $ok ;;
   restore)
     snap=${3:?snapshot file}
-    # shellcheck disable=SC1090
-    source <(grep -E '^(home|stock_state|setupwraith_state)=' "$snap")
+    home=; stock_state=; setupwraith_state=
+    while IFS='=' read -r k v; do
+      case $k in
+        home) home=$v ;;
+        stock_state) stock_state=$v ;;
+        setupwraith_state) setupwraith_state=$v ;;
+      esac
+    done <"$snap"
     [[ ${setupwraith_state:-enabled} == enabled ]] && a pm enable "$SETUPWRAITH" >/dev/null || true
-    [[ ${stock_state:-enabled} == enabled ]] && a pm enable "$STOCK" >/dev/null
+    [[ ${stock_state:-enabled} == enabled ]] && a pm enable "$STOCK" >/dev/null || true
     a cmd package set-home-activity "${home:-$STOCK_HOME}"
     echo "stock: $(enabled $STOCK)"; echo "setupwraith: $(enabled $SETUPWRAITH)"
     echo "home now: $(home_now)"; echo "role: $(role_now)" ;;

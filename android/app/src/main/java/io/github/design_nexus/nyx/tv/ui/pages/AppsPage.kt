@@ -147,7 +147,7 @@ class AppsPage(a: HomeActivity) : Page(a), RowHost {
                         when (code) {
                             KeyEvent.KEYCODE_DPAD_LEFT -> i % cols == 0
                             KeyEvent.KEYCODE_DPAD_RIGHT -> i == last || i % cols == cols - 1
-                            KeyEvent.KEYCODE_DPAD_UP -> i < cols
+                            KeyEvent.KEYCODE_DPAD_UP -> false
                             KeyEvent.KEYCODE_DPAD_DOWN -> i + cols > last
                             else -> false
                         }
@@ -156,11 +156,27 @@ class AppsPage(a: HomeActivity) : Page(a), RowHost {
                 is Entry.Folder -> {
                     h.tile.pkg = null
                     h.tile.alpha = 1f
-                    h.tile.setPlaceholder("${e.f.name}\n${e.apps.size} apps")
-                    h.tile.caption.text = e.f.name
+                    h.tile.setPlaceholder(e.f.name)
+                    h.tile.caption.text = "${e.f.name} · ${e.apps.size}"
+                    h.tile.caption.visibility = View.VISIBLE
                     h.tile.setOnClickListener { openFolder(e) }
                     h.tile.setOnLongClickListener { folderMenu(e.f); true }
-                    h.tile.setOnKeyListener(null)
+                    h.tile.setOnKeyListener { _, code, ev ->
+                        if (code == KeyEvent.KEYCODE_MENU && ev.action == KeyEvent.ACTION_UP) {
+                            folderMenu(e.f); return@setOnKeyListener true
+                        }
+                        if (ev.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                        val i = h.bindingAdapterPosition
+                        if (i < 0) return@setOnKeyListener false
+                        val cols = (grid.layoutManager as GridLayoutManager).spanCount
+                        val last = entries.size - 1
+                        when (code) {
+                            KeyEvent.KEYCODE_DPAD_LEFT -> i % cols == 0
+                            KeyEvent.KEYCODE_DPAD_RIGHT -> i == last || i % cols == cols - 1
+                            KeyEvent.KEYCODE_DPAD_DOWN -> i + cols > last
+                            else -> false
+                        }
+                    }
                 }
             }
         }
@@ -180,7 +196,9 @@ class AppsPage(a: HomeActivity) : Page(a), RowHost {
         val shared = ArrayList<MenuPanel.Item>()
         shared += MenuPanel.Item("Open") { a.launchApp(e) }
         val fav = e.pkg in a.config.favorites
-        shared += MenuPanel.Item(if (fav) "Remove from favorites" else "Add to favorites") { a.app.config.update { it.toggleFavorite(e.pkg) } }
+        shared += MenuPanel.Item(if (fav) "Remove from favorites" else "Add to favorites") {
+            a.app.config.update { c -> if (c.favorites.isEmpty() && !fav) c.copy(favorites = a.apps.filter { it.pkg in LauncherConfig.DEFAULT_FAVORITES }.map { it.pkg } + e.pkg) else c.toggleFavorite(e.pkg) }
+        }
         shared += items
         shared += MenuPanel.Item("Hide") { a.app.config.update { it.setHidden(e.pkg, true) } }
         shared += MenuPanel.Item("App info") { a.app.apps.openInfo(e.pkg) }

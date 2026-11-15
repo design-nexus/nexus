@@ -34,22 +34,24 @@ class HomeKeyFallbackService : AccessibilityService() {
         val i = Intent(this, HomeActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
             .addCategory(Intent.CATEGORY_HOME)
-        startActivity(i)
+        runCatching { startActivity(i) }
     }
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
         if (event.action != KeyEvent.ACTION_DOWN) return false
         when (event.keyCode) {
             KeyEvent.KEYCODE_NOTIFICATION, KeyEvent.KEYCODE_SETTINGS -> {
-                startActivity(
-                    Intent(this, HomeActivity::class.java)
-                        .addFlags(
-                            Intent.FLAG_ACTIVITY_NEW_TASK or
-                                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
-                                Intent.FLAG_ACTIVITY_SINGLE_TOP,
-                        )
-                        .putExtra(HomeActivity.EXTRA_OPEN_QUICK_SETTINGS, true),
-                )
+                runCatching {
+                    startActivity(
+                        Intent(this, HomeActivity::class.java)
+                            .addFlags(
+                                Intent.FLAG_ACTIVITY_NEW_TASK or
+                                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                                    Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                            )
+                            .putExtra(HomeActivity.EXTRA_OPEN_QUICK_SETTINGS, true),
+                    )
+                }
                 return true
             }
         }

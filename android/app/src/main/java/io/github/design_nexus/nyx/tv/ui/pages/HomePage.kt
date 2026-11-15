@@ -33,6 +33,7 @@ import io.github.design_nexus.nyx.tv.ui.MenuPanel
 import io.github.design_nexus.nyx.tv.ui.Page
 import io.github.design_nexus.nyx.tv.ui.Palette
 import io.github.design_nexus.nyx.tv.ui.PillButton
+import io.github.design_nexus.nyx.tv.ui.QuickSettings
 import io.github.design_nexus.nyx.tv.ui.RowData
 import io.github.design_nexus.nyx.tv.ui.RowHost
 import io.github.design_nexus.nyx.tv.ui.RowView
@@ -92,7 +93,23 @@ class HomePage(a: HomeActivity) : Page(a), RowHost {
     override val scope: CoroutineScope get() = a.scope
 
     private val handler = Handler(Looper.getMainLooper())
-    private val root = FrameLayout(a).apply { clipChildren = false }
+    private val root: FrameLayout = object : FrameLayout(a) {
+        override fun focusSearch(focused: View?, direction: Int): View? {
+            if (direction == View.FOCUS_UP && !heroMode && showingHero() && focused != null) {
+                var cur: View? = focused
+                var inList = false
+                while (cur != null && cur !== this) {
+                    if (cur === list) { inList = true; break }
+                    cur = cur.parent as? View
+                }
+                if (inList && focus.currentRow == adapter.rows.firstOrNull()?.id) {
+                    enterHero()
+                    return playBtn
+                }
+            }
+            return super.focusSearch(focused, direction)
+        }
+    }.apply { clipChildren = false }
     override val view: View get() = root
 
     private val info = vlinear(a)
@@ -108,6 +125,7 @@ class HomePage(a: HomeActivity) : Page(a), RowHost {
     private val adapter = RowsAdapter(this)
 
     private var featured: MediaItem? = null
+    private var focusedItem: MediaItem? = null
     private var unconfigured = false
     private var heroMode = true
     private val rowData = LinkedHashMap<String, RowData>()
@@ -276,6 +294,7 @@ class HomePage(a: HomeActivity) : Page(a), RowHost {
     override fun onCellFocused(row: RowData, index: Int, cell: Cell) {
         when (cell) {
             is Cell.Media -> {
+                focusedItem = cell.item
                 if (heroMode) {
                     heroMode = false
                     moveRows(0)
@@ -349,7 +368,7 @@ class HomePage(a: HomeActivity) : Page(a), RowHost {
 
     override fun onShow() {
         a.paintScrim(full = false)
-        a.setBackdrop(if (heroMode) featured?.backdrop else a.app.home.let { featured?.backdrop })
+        a.setBackdrop(if (heroMode) featured?.backdrop else (focusedItem?.backdrop ?: featured?.backdrop))
         if (SystemClock.elapsedRealtime() - lastRefresh > REFRESH_MS) refresh(force = false)
     }
 
@@ -358,7 +377,11 @@ class HomePage(a: HomeActivity) : Page(a), RowHost {
     }
 
     override fun onBack(): Boolean {
-        if (!heroMode && showingHero()) { playBtn.requestFocus(); return true }
+        if (!heroMode && showingHero()) {
+            enterHero()
+            playBtn.post { playBtn.requestFocus() }
+            return true
+        }
         if (!showingHero() && list.computeVerticalScrollOffset() > 0) { list.scrollToPosition(0); focus.forget(focus.currentRow ?: ""); focusRows(); return true }
         return false
     }
@@ -466,7 +489,7 @@ class HomePage(a: HomeActivity) : Page(a), RowHost {
     }
 }
 
-private fun HomeActivity.isOverlayFocus(): Boolean = currentFocus?.let { f -> generateSequence(f.parent) { it.parent }.any { it is MenuPanel } } ?: false
+private fun HomeActivity.isOverlayFocus(): Boolean = currentFocus?.let { f -> generateSequence(f.parent) { it.parent }.any { it is MenuPanel || it is QuickSettings } } ?: false
 
 /** The menu for an app tile, shared by Home and Apps. */
 fun appMenu(a: HomeActivity, e: AppEntry) {

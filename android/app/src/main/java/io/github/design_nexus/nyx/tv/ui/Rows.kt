@@ -125,8 +125,8 @@ class CellAdapter(private val host: RowHost, private val style: CardStyle, priva
                     fun focusTarget(): Boolean {
                         val target = rowsRv.findViewHolderForAdapterPosition(targetPos)?.itemView as? RowView
                             ?: return false
-                        // Prefer remembered column; fall back to first item.
-                        target.focusRemembered(host.focus)
+                        // Always land on the first title when switching rows.
+                        target.focusFirst()
                         return true
                     }
                     rowsRv.post {

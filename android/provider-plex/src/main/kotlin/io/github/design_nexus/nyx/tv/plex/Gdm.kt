@@ -32,8 +32,11 @@ object Gdm {
                 runCatching { socket.send(DatagramPacket(query, query.size, InetAddress.getByName(target), 32414)) }
             }
             val buf = ByteArray(2048)
-            val end = System.currentTimeMillis() + timeoutMs
-            while (System.currentTimeMillis() < end) {
+            val deadlineNs = System.nanoTime() + timeoutMs * 1_000_000L
+            while (true) {
+                val remainingMs = ((deadlineNs - System.nanoTime()) / 1_000_000L).toInt()
+                if (remainingMs <= 0) break
+                socket.soTimeout = remainingMs
                 val p = DatagramPacket(buf, buf.size)
                 try { socket.receive(p) } catch (_: SocketTimeoutException) { break }
                 parse(String(p.data, 0, p.length), p.address.hostAddress ?: continue)?.let { found[it.id] = it }

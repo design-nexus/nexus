@@ -101,7 +101,7 @@ private object Multicast {
             lock.acquire()
             io.github.design_nexus.nyx.tv.plex.Gdm.discover()
         } finally {
-            lock.release()
+            if (lock.isHeld) lock.release()
         }
     }
 }

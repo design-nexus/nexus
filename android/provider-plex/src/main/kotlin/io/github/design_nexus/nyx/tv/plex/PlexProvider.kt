@@ -65,12 +65,14 @@ class PlexProvider(
     override val status: StateFlow<ProviderStatus> = _status
 
     private val mutex = Mutex()
+    private val stateLock = Any()
     @Volatile private var client: PlexServerClient? = null
     @Volatile private var libs: List<Library>? = null
-    private val genreKeys = HashMap<String, Map<String, String>>()
+    private val genreKeys = java.util.concurrent.ConcurrentHashMap<String, Map<String, String>>()
     private val backoff = Backoff()
     private var retryJob: Job? = null
     @Volatile private var active = true
+    @Volatile private var sessionGeneration = 0L
 
     val session: PlexSession? get() = store.load()
 
@@ -82,24 +84,28 @@ class PlexProvider(
 
     /** Connect to [server] through its best connection and remember it. */
     suspend fun choose(server: PlexServer, accountToken: String?): String = mutex.withLock {
+        val gen = sessionGeneration
         val user = io { accountToken?.let { runCatching { account.user(it) }.getOrNull() } }
         val c = probe(server.connections.groupBy { it.priority }.toSortedMap().values.map { g -> g.map { it.url } }, server.id, server.token)
             ?: throw ProviderUnavailable("${server.name} can't be reached")
+        if (gen != sessionGeneration) throw ProviderUnavailable("Signed out")
         val s = PlexSession(
             server.id, server.name, server.token, server.connections.map { it.url.toString() }, c.base.toString(),
             accountToken, user?.name, user?.thumb,
         )
         store.save(s)
-        online(c)
+        online(c, gen)
         c.name
     }
 
     /** Refresh name/avatar from plex.tv when we have an account token but no thumb yet. */
     suspend fun refreshUserProfile() {
+        val gen = sessionGeneration
         val s = store.load() ?: return
         val token = s.accountToken ?: return
         if (s.userThumb != null && s.userName != null) return
         val user = io { runCatching { account.user(token) }.getOrNull() } ?: return
+        if (gen != sessionGeneration || store.load() == null) return
         val next = s.copy(
             userName = user.name ?: s.userName,
             userThumb = user.thumb ?: s.userThumb,
@@ -109,32 +115,41 @@ class PlexProvider(
 
     /** A server by address and token, for servers the account can't list. */
     suspend fun connectManual(address: String, token: String): String = mutex.withLock {
+        val gen = sessionGeneration
         val url = PlexHttp.serverUrl(address) ?: throw IllegalArgumentException("Enter an address like 192.168.1.20:32400")
         val tmp = PlexServerClient(http, url, token, ServerRef(id, ""))
         val (sid, name) = io { tmp.identity() }
         val c = PlexServerClient(http, url, token, ServerRef(id, sid), name)
         io { c.libraries() }
+        if (gen != sessionGeneration) throw ProviderUnavailable("Signed out")
         store.save(PlexSession(sid, name, token, listOf(url.toString()), url.toString()))
-        online(c)
+        online(c, gen)
         name
     }
 
     fun signOut() {
-        store.save(null)
-        client = null
-        libs = null
-        genreKeys.clear()
-        retryJob?.cancel()
-        _status.value = ProviderStatus.Unconfigured
+        synchronized(stateLock) {
+            sessionGeneration++
+            store.save(null)
+            client = null
+            libs = null
+            genreKeys.clear()
+            retryJob?.cancel()
+            retryJob = null
+            _status.value = ProviderStatus.Unconfigured
+        }
     }
 
     /** The launcher is visible (true) or not; retries only run while it is. */
     fun setActive(visible: Boolean) {
-        active = visible
-        if (!visible) {
-            retryJob?.cancel()
-        } else if (_status.value is ProviderStatus.Offline && retryJob?.isActive != true) {
-            scheduleRetry(1_000)
+        synchronized(stateLock) {
+            active = visible
+            if (!visible) {
+                retryJob?.cancel()
+                retryJob = null
+            } else if (_status.value is ProviderStatus.Offline && retryJob?.isActive != true) {
+                scheduleRetry(1_000)
+            }
         }
     }
 
@@ -155,6 +170,7 @@ class PlexProvider(
     }
 
     private suspend fun connect(): PlexServerClient {
+        val gen = sessionGeneration
         var s = store.load() ?: run {
             _status.value = ProviderStatus.Unconfigured
             throw ProviderUnavailable("Not signed in to Plex")
@@ -164,7 +180,7 @@ class PlexProvider(
         var c = probe(listOf(known.take(1), known.drop(1)), s.serverId, s.serverToken)
         if (c == null && s.accountToken != null) {
             val fresh = runCatching { io { account.servers(s.accountToken!!) } }.getOrNull()?.firstOrNull { it.id == s.serverId }
-            if (fresh != null) {
+            if (fresh != null && gen == sessionGeneration) {
                 s = s.copy(serverToken = fresh.token, addresses = fresh.connections.map { it.url.toString() })
                 store.save(s)
                 c = probe(fresh.connections.groupBy { it.priority }.toSortedMap().values.map { g -> g.map { it.url } }, s.serverId, s.serverToken)
@@ -174,12 +190,13 @@ class PlexProvider(
             val local = runCatching { io { localDiscovery() } }.getOrDefault(emptyList()).firstOrNull { it.id == s.serverId }
             if (local != null) PlexHttp.serverUrl("http://${local.host}:${local.port}")?.let { c = probe(listOf(listOf(it)), s.serverId, s.serverToken) }
         }
+        if (gen != sessionGeneration) throw ProviderUnavailable("Signed out")
         val found = c ?: run {
             offline(s.serverName, "unreachable")
             throw ProviderUnavailable("${s.serverName} is unreachable")
         }
         if (found.base.toString() != s.lastGood) store.save(s.copy(lastGood = found.base.toString()))
-        online(found)
+        online(found, gen)
         return found
     }
 
@@ -205,26 +222,36 @@ class PlexProvider(
         return null
     }
 
-    private fun online(c: PlexServerClient) {
-        client = c
-        backoff.reset()
-        retryJob?.cancel()
-        _status.value = ProviderStatus.Online(c.name, c.base.host)
+    private fun online(c: PlexServerClient, gen: Long) {
+        synchronized(stateLock) {
+            if (gen != sessionGeneration) return
+            client = c
+            backoff.reset()
+            retryJob?.cancel()
+            retryJob = null
+            _status.value = ProviderStatus.Online(c.name, c.base.host)
+        }
     }
 
     private fun offline(name: String, reason: String) {
-        client = null
-        val wait = backoff.next()
-        _status.value = ProviderStatus.Offline(name, reason, now() + wait)
-        scheduleRetry(wait)
+        synchronized(stateLock) {
+            if (store.load() == null) return
+            client = null
+            val wait = backoff.next()
+            _status.value = ProviderStatus.Offline(name, reason, now() + wait)
+            scheduleRetry(wait)
+        }
     }
 
     private fun scheduleRetry(waitMs: Long) {
-        retryJob?.cancel()
-        if (!active) return
-        retryJob = scope.launch {
-            delay(waitMs)
-            runCatching { connected() }
+        synchronized(stateLock) {
+            retryJob?.cancel()
+            retryJob = null
+            if (!active) return
+            retryJob = scope.launch {
+                delay(waitMs)
+                runCatching { connected() }
+            }
         }
     }
 
@@ -236,8 +263,12 @@ class PlexProvider(
             offline(c.name, "unreachable")
             throw e
         } catch (e: PlexAuthRequired) {
-            client = null
-            _status.value = ProviderStatus.Offline(c.name, "Sign in to Plex again", Long.MAX_VALUE)
+            synchronized(stateLock) {
+                client = null
+                retryJob?.cancel()
+                retryJob = null
+                _status.value = ProviderStatus.Offline(c.name, "Sign in to Plex again", Long.MAX_VALUE)
+            }
             throw ProviderUnavailable("Plex sign-in expired", e)
         }
     }

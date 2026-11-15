@@ -45,6 +45,8 @@ class HomeRepository(private val provider: MediaProvider, private val cache: Met
             cache.put(key(row), pinned)
             if (pinned != cached) emit(pinned)
         } catch (_: ProviderUnavailable) {
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (_: Exception) {
         }
     }.flowOn(Dispatchers.IO)

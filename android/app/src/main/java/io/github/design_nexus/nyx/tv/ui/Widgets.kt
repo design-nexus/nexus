@@ -123,8 +123,8 @@ class SettingRow(ctx: Context, private val p: Palette, title: String, desc: Stri
         val o = on
         toggleBox.visibility = if (o == null) GONE else VISIBLE
         if (o != null) {
-            toggle.background = rounded(if (o) (if (focused) p.base else p.accent) else alpha(p.o0, 0.5f), dp(11).toFloat())
-            knob.background = rounded(if (o) (if (focused) p.text else p.onAccent) else p.sub1, dp(8).toFloat())
+            toggle.background = rounded(if (o) (if (focused) p.base else p.accent) else if (focused) alpha(p.base, 0.25f) else alpha(p.o0, 0.5f), dp(11).toFloat())
+            knob.background = rounded(if (o) (if (focused) p.text else p.onAccent) else if (focused) p.base else p.sub1, dp(8).toFloat())
             // New LayoutParams so the knob actually moves (mutating margin alone often no-ops).
             knob.layoutParams = FrameLayout.LayoutParams(dp(16), dp(16)).apply {
                 gravity = Gravity.CENTER_VERTICAL or (if (o) Gravity.END else Gravity.START)
@@ -148,6 +148,8 @@ class MenuPanel(ctx: Context, p: Palette, title: String?, subtitle: String?, ite
         elevation = dp(24).toFloat()
         if (title != null) addView(ctx.text(14f, p.text, MEDIUM, s = title), llp(WRAP, WRAP) { setMargins(dp(10), dp(6), dp(10), dp(2)) })
         if (subtitle != null) addView(ctx.text(11f, p.sub0, s = subtitle), llp(WRAP, WRAP) { setMargins(dp(10), 0, dp(10), dp(7)) })
+        val scroll = android.widget.ScrollView(ctx).apply { isVerticalScrollBarEnabled = false }
+        val list = LinearLayout(ctx).apply { orientation = VERTICAL }
         var f: View? = null
         for (it in items) {
             val row = hlinear(ctx).apply {
@@ -172,10 +174,18 @@ class MenuPanel(ctx: Context, p: Palette, title: String?, subtitle: String?, ite
             paint(false)
             row.setOnFocusChangeListener { _, focused -> paint(focused) }
             row.setOnClickListener { _ -> onClose(); it.action() }
-            addView(row, llp(MATCH, WRAP))
+            list.addView(row, llp(MATCH, WRAP))
             if (f == null) f = row
         }
+        scroll.addView(list, FrameLayout.LayoutParams(MATCH, WRAP))
+        addView(scroll, llp(MATCH, WRAP))
         first = f
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val maxH = (resources.displayMetrics.heightPixels * 0.78f).toInt()
+        val capped = MeasureSpec.makeMeasureSpec(maxH, MeasureSpec.AT_MOST)
+        super.onMeasure(widthMeasureSpec, capped)
     }
 
     fun focusFirst() = first?.requestFocus()

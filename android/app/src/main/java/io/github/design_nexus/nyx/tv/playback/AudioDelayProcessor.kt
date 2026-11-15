@@ -24,7 +24,7 @@ class AudioDelayProcessor : BaseAudioProcessor() {
             pendingReset = true
         }
 
-    private var pendingReset = false
+    @Volatile private var pendingReset = false
     private var queue = ByteArray(0)
     private var queueSize = 0
     private var skipRemaining = 0
@@ -37,17 +37,17 @@ class AudioDelayProcessor : BaseAudioProcessor() {
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
+        val delay = delayMs
         if (pendingReset) {
             queueSize = 0
             skipRemaining = 0
             pendingReset = false
-            val bytesPerMs = bytesPerMillisecond()
-            if (delayMs < 0) skipRemaining = (-delayMs) * bytesPerMs
-            else if (delayMs > 0) {
-                val silence = delayMs * bytesPerMs
-                ensureCapacity(silence)
-                queue.fill(0, 0, silence)
-                queueSize = silence
+            val targetBytes = bytesForMs(kotlin.math.abs(delay))
+            if (delay < 0) skipRemaining = targetBytes
+            else if (delay > 0) {
+                ensureCapacity(targetBytes)
+                queue.fill(0, 0, targetBytes)
+                queueSize = targetBytes
             }
         }
         if (!inputBuffer.hasRemaining()) return
@@ -62,11 +62,11 @@ class AudioDelayProcessor : BaseAudioProcessor() {
         ensureCapacity(queueSize + remaining)
         inputBuffer.get(queue, queueSize, remaining)
         queueSize += remaining
-        flushOutput()
+        flushOutput(delay = delay)
     }
 
     override fun onQueueEndOfStream() {
-        flushOutput(force = true)
+        flushOutput(delay = delayMs, force = true)
     }
 
     override fun onFlush() {
@@ -82,8 +82,8 @@ class AudioDelayProcessor : BaseAudioProcessor() {
         pendingReset = true
     }
 
-    private fun flushOutput(force: Boolean = false) {
-        val keep = if (delayMs > 0 && !force) delayMs * bytesPerMillisecond() else 0
+    private fun flushOutput(delay: Int = delayMs, force: Boolean = false) {
+        val keep = if (delay > 0 && !force) bytesForMs(delay) else 0
         val available = queueSize - keep
         if (available <= 0) return
         val out = replaceOutputBuffer(available)
@@ -93,11 +93,12 @@ class AudioDelayProcessor : BaseAudioProcessor() {
         queueSize = keep
     }
 
-    private fun bytesPerMillisecond(): Int {
+    private fun bytesForMs(ms: Int): Int {
         val format = outputAudioFormat
-        if (format === AudioProcessor.AudioFormat.NOT_SET) return 0
+        if (format === AudioProcessor.AudioFormat.NOT_SET || ms <= 0) return 0
         val bytesPerFrame = format.channelCount * 2 // PCM 16-bit
-        return (format.sampleRate * bytesPerFrame) / 1000
+        val frames = (format.sampleRate.toLong() * ms) / 1000L
+        return (frames * bytesPerFrame).toInt()
     }
 
     private fun ensureCapacity(needed: Int) {

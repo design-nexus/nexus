@@ -101,6 +101,7 @@ class HomeActivity : Activity() {
     private var overlayReturn: View? = null
     private var ambient: AmbientView? = null
     private var lastKeyAt = SystemClock.uptimeMillis()
+    private var backLongPressHandled = false
     private var visible = false
     private var statusJob: Job? = null
     private var firstFrameLogged = false
@@ -504,6 +505,23 @@ class HomeActivity : Activity() {
             if (event.action == KeyEvent.ACTION_UP) stopAmbient()
             return true
         }
+        if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+            when (event.action) {
+                KeyEvent.ACTION_DOWN -> if (event.repeatCount == 0) {
+                    backLongPressHandled = false
+                } else {
+                    if (!backLongPressHandled) {
+                        backLongPressHandled = true
+                        openQuickSettings()
+                    }
+                    return true
+                }
+                KeyEvent.ACTION_UP -> if (backLongPressHandled) {
+                    backLongPressHandled = false
+                    return true
+                }
+            }
+        }
         if (event.action == KeyEvent.ACTION_DOWN) {
             when (event.keyCode) {
                 // SETTINGS is often stolen by the framework; on TCL the gear arrives as NOTIFICATION.
@@ -542,7 +560,10 @@ class HomeActivity : Activity() {
         setIntent(intent)
         if (!::root.isInitialized) return
         stopAmbient()
-        closeOverlay()
+        val isQuickSettingsToggle = intent.getBooleanExtra(EXTRA_OPEN_QUICK_SETTINGS, false) ||
+            intent.action == ACTION_TOGGLE_NOTIFICATION_PANEL ||
+            intent.action == ACTION_OPEN_NOTIFICATION_PANEL
+        if (!isQuickSettingsToggle) closeOverlay()
         if (intent.hasCategory(Intent.CATEGORY_HOME) &&
             !intent.getBooleanExtra(EXTRA_OPEN_INPUTS, false) &&
             !intent.getBooleanExtra(EXTRA_OPEN_QUICK_SETTINGS, false)
@@ -687,6 +708,14 @@ class HomeActivity : Activity() {
         config = c
         if (c.theme != old.theme || c.accent != old.accent) {
             val reopenAppearance = stack.any { it is SettingsPage }
+            backdropReq?.dispose()
+            backdropReq = null
+            backdropPath = null
+            avatarReq?.dispose()
+            avatarReq = null
+            avatarThumbLoaded = null
+            overlay = null
+            overlayReturn = null
             palette = Palette.of(c.theme, c.accent)
             roots.clear()
             val tab = currentRootTab() ?: "home"

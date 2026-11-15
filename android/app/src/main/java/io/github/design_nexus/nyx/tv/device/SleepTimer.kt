@@ -17,6 +17,7 @@ object SleepTimer {
     private var onFire: (() -> Unit)? = null
 
     /** Minutes left, or null when idle. */
+    @Synchronized
     fun remainingMinutes(): Int? {
         if (pending == null || fireAtElapsed == 0L) return null
         val ms = fireAtElapsed - SystemClock.elapsedRealtime()
@@ -24,8 +25,10 @@ object SleepTimer {
         return ((ms + 59_999) / 60_000).toInt().coerceAtLeast(1)
     }
 
+    @Synchronized
     fun isActive(): Boolean = pending != null
 
+    @Synchronized
     fun cancel() {
         pending?.let { handler.removeCallbacks(it) }
         pending = null
@@ -37,24 +40,38 @@ object SleepTimer {
      * Schedule [minutes] from now. [fire] runs on the main thread when the timer ends
      * (typically start Ambient black). Replaces any previous timer.
      */
+    @Synchronized
     fun schedule(minutes: Int, fire: () -> Unit) {
         cancel()
         if (minutes <= 0) return
         onFire = fire
         fireAtElapsed = SystemClock.elapsedRealtime() + minutes * 60_000L
         val r = Runnable {
-            pending = null
-            fireAtElapsed = 0L
-            val cb = onFire
-            onFire = null
+            val cb = synchronized(this) {
+                pending = null
+                fireAtElapsed = 0L
+                val c = onFire
+                onFire = null
+                c
+            }
             cb?.invoke()
         }
         pending = r
         handler.postDelayed(r, minutes * 60_000L)
     }
 
+    fun formatDuration(minutes: Int): String {
+        val h = minutes / 60
+        val m = minutes % 60
+        return when {
+            h > 0 && m > 0 -> "$h hr $m min"
+            h > 0 -> "$h hr"
+            else -> "$m min"
+        }
+    }
+
     fun subtitle(): String {
         val left = remainingMinutes() ?: return "Off"
-        return "$left min left"
+        return "${formatDuration(left)} left"
     }
 }

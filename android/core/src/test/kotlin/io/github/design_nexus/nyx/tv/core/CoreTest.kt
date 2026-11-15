@@ -32,7 +32,7 @@ class ConfigCodecTest {
         val v0 = """{"showHero":false,"appsAbove":true,"rows":[{"id":"continue","type":"CONTINUE_WATCHING"},{"id":"m","type":"RECENT_MOVIES"}]}"""
         val c = ConfigCodec.decode(v0)
         assertFalse(c.heroEnabled)
-        assertEquals(listOf("apps", "continue", "m"), c.rows.map { it.id })
+        assertEquals(listOf("apps", "continue", "m", "playlists"), c.rows.map { it.id })
         assertEquals(CardStyle.APP_TILE, c.rows[0].style)
     }
 

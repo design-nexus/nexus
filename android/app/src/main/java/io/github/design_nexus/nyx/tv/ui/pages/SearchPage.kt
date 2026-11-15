@@ -145,7 +145,12 @@ class SearchPage(a: HomeActivity) : Page(a), RowHost {
     }
 
     private suspend fun run(q: String) {
-        if (q.isEmpty()) { adapter.submit(emptyList()); hint.visibility = View.VISIBLE; return }
+        if (q.isEmpty()) {
+            adapter.submit(emptyList())
+            hint.text = "Type with the remote, or press Mic to speak."
+            hint.visibility = View.VISIBLE
+            return
+        }
         hint.visibility = View.GONE
         val apps = a.apps.filter { it.label.contains(q, ignoreCase = true) && it.pkg !in a.config.hiddenApps }
         val rows = ArrayList<RowData>()

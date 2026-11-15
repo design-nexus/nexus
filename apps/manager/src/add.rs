@@ -457,6 +457,9 @@ fn make_manual_tile(page: &AddPage) -> gtk::Box {
     let b = gtk::Button::with_label("Type address");
     let pop = page.manual_popover.clone();
     b.connect_clicked(move |btn| {
+        if pop.parent().is_some() {
+            pop.unparent();
+        }
         pop.set_parent(btn);
         pop.popup();
     });

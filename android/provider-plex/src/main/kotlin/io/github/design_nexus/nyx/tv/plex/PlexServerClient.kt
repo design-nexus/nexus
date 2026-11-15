@@ -120,12 +120,12 @@ class PlexServerClient(
         )
 
     fun playlist(id: String): JSONObject? {
-        require(id.all(Char::isDigit))
+        require(isDigits(id))
         return PlexParser.container(get("/playlists/$id")).optJSONArray("Metadata").objects().firstOrNull()
     }
 
     fun metadata(id: String, includeMarkers: Boolean = false): JSONObject? {
-        require(id.all(Char::isDigit))
+        require(isDigits(id))
         val q = ArrayList<Pair<String, String>>()
         q += "includeRelated" to "1"
         q += "includeExtras" to "0"
@@ -134,7 +134,7 @@ class PlexServerClient(
     }
 
     fun children(item: MediaItem): List<MediaItem> {
-        require(item.id.all(Char::isDigit))
+        require(isDigits(item.id))
         val path = when (item.kind) {
             MediaKind.COLLECTION -> "/library/collections/${item.id}/children"
             MediaKind.PLAYLIST -> "/playlists/${item.id}/items"
@@ -155,7 +155,7 @@ class PlexServerClient(
     }
 
     fun setWatched(id: String, watched: Boolean) {
-        require(id.all(Char::isDigit))
+        require(isDigits(id))
         get(if (watched) "/:/scrobble" else "/:/unscrobble", listOf("key" to id, "identifier" to "com.plexapp.plugins.library"))
     }
 
@@ -177,7 +177,7 @@ class PlexServerClient(
 
     /** Markers, tracks, chapters and next episode for the player chrome. */
     fun playInfo(itemId: String): PlayInfo {
-        require(itemId.all(Char::isDigit))
+        require(isDigits(itemId))
         val meta = metadata(itemId, includeMarkers = true) ?: throw PlexBadResponse("Title not found")
         val item = PlexParser.item(meta, ref) ?: throw PlexBadResponse("Title not found")
         val part = firstPart(meta)
@@ -235,7 +235,7 @@ class PlexServerClient(
         audioStreamId: Int? = null,
         subtitleStreamId: Int? = null,
     ): StreamSource {
-        require(itemId.all(Char::isDigit))
+        require(isDigits(itemId))
         val meta = metadata(itemId) ?: throw PlexBadResponse("Title not found")
         val part = firstPart(meta) ?: throw PlexBadResponse("No playable media")
         val duration = meta.optLong("duration", 0).takeIf { it > 0 }
@@ -285,7 +285,7 @@ class PlexServerClient(
         val siblings = try { children(item.copy(id = seasonId, kind = MediaKind.SEASON)) } catch (_: Exception) { emptyList() }
         val idx = siblings.indexOfFirst { it.id == item.id }
         if (idx >= 0 && idx + 1 < siblings.size) return siblings[idx + 1]
-        val showId = item.seriesId ?: meta.opt("grandparentRatingKey")?.toString()?.takeIf { it.all(Char::isDigit) } ?: return null
+        val showId = item.seriesId ?: meta.opt("grandparentRatingKey")?.toString()?.takeIf { isDigits(it) } ?: return null
         val seasons = try { children(MediaItem(ref, showId, MediaKind.SHOW, title = "")) } catch (_: Exception) { emptyList() }
         val si = seasons.indexOfFirst { it.id == seasonId }
         if (si < 0 || si + 1 >= seasons.size) return null
@@ -293,7 +293,7 @@ class PlexServerClient(
     }
 
     fun timeline(update: TimelineUpdate) {
-        require(update.itemId.all(Char::isDigit))
+        require(isDigits(update.itemId))
         val state = when (update.state) {
             TimelineState.PLAYING -> "playing"
             TimelineState.PAUSED -> "paused"
@@ -325,6 +325,8 @@ class PlexServerClient(
         }
     }
 
+    private fun isDigits(s: String): Boolean = s.isNotEmpty() && s.all(Char::isDigit)
+
     private fun transcodeQuery(
         itemId: String,
         mediaIndex: Int,
@@ -344,7 +346,7 @@ class PlexServerClient(
         q += "directPlay" to "0"
         q += "directStream" to "0"
         q += "directStreamAudio" to "0"
-        q += "offset" to "%.3f".format(positionMs / 1000.0)
+        q += "offset" to java.lang.String.format(java.util.Locale.US, "%.3f", positionMs / 1000.0)
         q += "videoResolution" to "1920x1080"
         q += "videoBitrate" to "8000"
         q += "audioChannelCount" to "2"

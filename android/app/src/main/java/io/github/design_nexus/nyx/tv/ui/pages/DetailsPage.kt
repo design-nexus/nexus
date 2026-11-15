@@ -29,6 +29,7 @@ import io.github.design_nexus.nyx.tv.ui.RowData
 import io.github.design_nexus.nyx.tv.ui.RowHost
 import io.github.design_nexus.nyx.tv.ui.RowsAdapter
 import io.github.design_nexus.nyx.tv.ui.WRAP
+import kotlinx.coroutines.Job
 import io.github.design_nexus.nyx.tv.ui.dp
 import io.github.design_nexus.nyx.tv.ui.flp
 import io.github.design_nexus.nyx.tv.ui.formatRuntime
@@ -73,10 +74,12 @@ class DetailsPage(a: HomeActivity, private var item: MediaItem) : Page(a), RowHo
     private var currentSeason: MediaItem? = null
     private var episodes: List<MediaItem> = emptyList()
     private var playTarget: MediaItem? = null
-    private val column = vlinear(a)
+    private var episodesJob: Job? = null
+    private val column = vlinear(a).apply { clipChildren = false; clipToPadding = false }
 
     init {
         info.clipChildren = false
+        info.setPadding(a.dp(48), 0, a.dp(48), 0)
         info.addView(eyebrow)
         info.addView(title, llp(MATCH, WRAP) { topMargin = a.dp(8); bottomMargin = a.dp(10) })
         info.addView(meta)
@@ -85,7 +88,7 @@ class DetailsPage(a: HomeActivity, private var item: MediaItem) : Page(a), RowHo
         info.addView(credits, llp(a.dp(520), WRAP) { topMargin = a.dp(8) })
         info.addView(buttons, llp(WRAP, WRAP) { topMargin = a.dp(18) })
         // Season chips sit under Play — never overlaid at a fixed Y that covers the buttons.
-        column.addView(info, llp(a.dp(640), WRAP))
+        column.addView(info, llp(a.dp(736), WRAP))
         column.addView(seasonScroll, llp(MATCH, WRAP) { topMargin = a.dp(16) })
         list.layoutManager = LinearLayoutManager(a)
         list.adapter = adapter
@@ -94,9 +97,8 @@ class DetailsPage(a: HomeActivity, private var item: MediaItem) : Page(a), RowHo
         list.clipToPadding = false
         list.setPadding(0, a.dp(8), 0, a.dp(24))
         column.addView(list, llp(MATCH, 0, 1f))
-        root.addView(column, flp(MATCH, MATCH).apply { setMargins(a.dp(48), a.dp(80), a.dp(48), 0) })
-        // Season row and episode list use full width; pull season/list left margin back to match home rows.
-        seasonScroll.setPadding(0, 0, 0, 0)
+        root.addView(column, flp(MATCH, MATCH).apply { setMargins(0, a.dp(80), 0, 0) })
+        seasonScroll.setPadding(a.dp(48), 0, a.dp(48), 0)
         render()
         load()
     }
@@ -243,7 +245,8 @@ class DetailsPage(a: HomeActivity, private var item: MediaItem) : Page(a), RowHo
     }
 
     private fun loadEpisodes(s: MediaItem) {
-        a.scope.launch {
+        episodesJob?.cancel()
+        episodesJob = a.scope.launch {
             episodes = runCatching { provider.children(s) }.getOrDefault(emptyList())
             val target = episodes.firstOrNull { it.progress > 0 } ?: episodes.firstOrNull { !it.watched } ?: episodes.firstOrNull()
             if (playTarget == null || item.kind == MediaKind.SEASON || s == currentSeason) playTarget = target

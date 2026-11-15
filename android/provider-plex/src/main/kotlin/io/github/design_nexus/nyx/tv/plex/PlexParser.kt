@@ -65,12 +65,12 @@ object PlexParser {
             server = server,
             id = id,
             kind = kind,
-            title = v.optString("title").ifEmpty { "Untitled" },
+            title = v.optStr("title") ?: "Untitled",
             year = v.optInt("year", 0).takeIf { it > 0 },
-            summary = v.optString("summary"),
-            tagline = v.optString("tagline"),
-            genres = v.optJSONArray("Genre").objects().mapNotNull { it.optString("tag").ifEmpty { null } },
-            contentRating = v.optString("contentRating").ifEmpty { null },
+            summary = v.optStr("summary") ?: "",
+            tagline = v.optStr("tagline") ?: "",
+            genres = v.optJSONArray("Genre").objects().mapNotNull { it.optStr("tag") },
+            contentRating = v.optStr("contentRating"),
             durationMs = v.optLong("duration", 0),
             viewOffsetMs = v.optLong("viewOffset", 0),
             watched = when (kind) {
@@ -87,8 +87,8 @@ object PlexParser {
                 else -> null
             },
             seriesTitle = when {
-                episode -> v.optString("grandparentTitle").ifEmpty { null }
-                season -> v.optString("parentTitle").ifEmpty { null }
+                episode -> v.optStr("grandparentTitle")
+                season -> v.optStr("parentTitle")
                 else -> null
             },
             seasonNumber = when {
@@ -176,6 +176,9 @@ object PlexParser {
         }
         return s.takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
     }
+
+    private fun JSONObject.optStr(key: String): String? =
+        if (isNull(key)) null else optString(key).takeIf { it.isNotEmpty() && it != "null" }
 
     fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else (0 until length()).mapNotNull { optJSONObject(it) }
 }

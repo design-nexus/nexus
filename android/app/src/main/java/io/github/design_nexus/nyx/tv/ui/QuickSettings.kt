@@ -114,23 +114,24 @@ class QuickSettings(private val a: HomeActivity) : FrameLayout(a) {
 
     private fun showSleepTimer() {
         val items = ArrayList<MenuPanel.Item>()
-        items += MenuPanel.Item("Off", if (!SleepTimer.isActive()) "Current" else null) {
+        items += MenuPanel.Item("Off") {
             SleepTimer.cancel()
             a.toast("Sleep timer off")
         }
         for (m in SleepTimer.CHOICES_MIN) {
-            items += MenuPanel.Item("$m minutes") {
+            val label = SleepTimer.formatDuration(m)
+            items += MenuPanel.Item(label) {
                 SleepTimer.schedule(m) { a.startSleepAmbient() }
-                a.toast("Sleep timer · $m min")
+                a.toast("Sleep timer · $label")
             }
         }
         if (tv.canOpen(TvSystem.Screen.POWER)) {
-            items += MenuPanel.Item("TV power / sleep settings…", "System screen") {
+            items += MenuPanel.Item("TV power settings…") {
                 a.closeOverlay()
                 if (!tv.open(TvSystem.Screen.POWER)) a.toast("Couldn't open power settings")
             }
         }
-        a.showMenu("Sleep timer", "Turns on Ambient black — not full TV standby", items)
+        a.showMenu("Sleep timer", null, items)
     }
 
     override fun focusSearch(focused: View?, direction: Int): View {

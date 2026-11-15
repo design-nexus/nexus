@@ -81,7 +81,14 @@ impl Adb {
             String::from_utf8_lossy(&out.stdout),
             String::from_utf8_lossy(&out.stderr)
         );
-        if text.contains("connected") || text.contains("already connected") {
+        let lower = text.to_lowercase();
+        if out.status.success()
+            && !lower.contains("disconnected")
+            && !lower.contains("not connected")
+            && !lower.contains("failed")
+            && !lower.contains("cannot connect")
+            && (lower.contains("connected") || lower.contains("already connected"))
+        {
             return Ok(Self {
                 bin,
                 serial: host_port.to_string(),
@@ -99,9 +106,7 @@ impl Adb {
             String::from_utf8_lossy(&out.stdout),
             String::from_utf8_lossy(&out.stderr)
         );
-        if text.to_lowercase().contains("successfully") || text.to_lowercase().contains("success") {
-            Ok(())
-        } else if out.status.success() {
+        if out.status.success() || text.to_lowercase().contains("success") {
             Ok(())
         } else {
             bail!("adb pair failed: {}", text.trim());
@@ -236,12 +241,13 @@ impl Adb {
         if out.status.success() {
             Ok(out)
         } else {
-            bail!(
-                "adb {} failed ({}): {}",
-                args.join(" "),
-                out.status,
-                String::from_utf8_lossy(&out.stderr).trim()
-            );
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            let detail = match (stdout.trim(), stderr.trim()) {
+                ("", s) | (s, "") => s.to_string(),
+                (a, b) => format!("{a}; {b}"),
+            };
+            bail!("adb {} failed ({}): {detail}", args.join(" "), out.status);
         }
     }
 

@@ -40,9 +40,9 @@ pss_mb() {
   local dump
   dump=$(run shell dumpsys meminfo "$pkg" 2>/dev/null || true)
   printf '%s\n' "$dump" >"$out/meminfo-${pkg//\//_}.txt"
-  python3 - "$dump" <<'PY'
+  python3 - <<'PY' <<<"$dump"
 import re, sys
-text = sys.argv[1]
+text = sys.stdin.read()
 for line in text.splitlines():
     t = line.strip()
     if t.startswith("TOTAL PSS:") or (t.startswith("TOTAL:") and "SWAP" not in t):
@@ -60,7 +60,7 @@ case $nyx_pkg in
   io.github.design_nexus.nyx.tv) nyx_home="$nyx_pkg/io.github.design_nexus.nyx.tv.ui.HomeActivity" ;;
 esac
 nyx_is_home=0
-[[ $home == *"$nyx_pkg"* ]] && nyx_is_home=1
+[[ -n $nyx_pkg && $home == *"$nyx_pkg"* ]] && nyx_is_home=1
 printf 'nyx_is_home=%s\nnyx_home=%s\n' "$nyx_is_home" "$nyx_home" >>"$out/meta.env"
 
 # Cold / warm: prefer Home button when Nyx is HOME; else am start -W.

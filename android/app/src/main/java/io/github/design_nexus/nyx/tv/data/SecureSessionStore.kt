@@ -34,9 +34,16 @@ class SecureSessionStore(context: Context) : PlexSessionStore {
 
     @Synchronized
     override fun save(session: PlexSession?) {
-        cached = session
-        read = true
-        if (session == null) prefs.edit().remove(KEY).apply() else prefs.edit().putString(KEY, encrypt(encode(session))).apply()
+        if (session == null) {
+            cached = null
+            read = true
+            prefs.edit().remove(KEY).apply()
+        } else {
+            val encrypted = runCatching { encrypt(encode(session)) }.getOrNull() ?: return
+            cached = session
+            read = true
+            prefs.edit().putString(KEY, encrypted).apply()
+        }
     }
 
     private fun key(): SecretKey {

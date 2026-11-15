@@ -94,12 +94,16 @@ object ConfigCodec {
             v = 2
         }
         if (v == 2) {
-            // Insert Playlists after Collections (or at end) when missing.
-            val rows = o.optJSONArray("rows") ?: JSONArray().also { o.put("rows", it) }
-            val has = (0 until rows.length()).any { i ->
+            // Insert Playlists after Collections (or at end) when missing, but only if there
+            // is at least one valid row (otherwise damaged/empty configs fall back to defaults).
+            val rows = o.optJSONArray("rows")
+            val hasValidRow = rows != null && (0 until rows.length()).any { i ->
+                enumOrNull<RowType>(rows.optJSONObject(i)?.optString("type")) != null
+            }
+            val has = rows != null && (0 until rows.length()).any { i ->
                 rows.optJSONObject(i)?.optString("type") == "PLAYLISTS"
             }
-            if (!has) {
+            if (hasValidRow && !has) {
                 val playlist = JSONObject()
                     .put("id", "playlists")
                     .put("type", "PLAYLISTS")

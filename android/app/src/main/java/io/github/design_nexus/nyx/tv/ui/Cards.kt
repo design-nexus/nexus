@@ -181,7 +181,9 @@ class MediaCard(ctx: Context, private val p: Palette, val style: CardStyle, priv
         progressFill.visibility = if (prog > 0) VISIBLE else GONE
         if (prog > 0) {
             frame.post {
-                val full = frame.width - dp(16)
+                val w = frame.width
+                if (w <= 0) return@post
+                val full = w - dp(16)
                 progressFill.layoutParams = (progressFill.layoutParams as FrameLayout.LayoutParams).apply { width = (full * prog).toInt().coerceAtLeast(dp(3)) }
             }
         }

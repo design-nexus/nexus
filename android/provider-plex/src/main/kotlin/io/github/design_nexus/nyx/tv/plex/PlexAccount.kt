@@ -62,10 +62,13 @@ class PlexAccount(private val http: PlexHttp, private val base: HttpUrl = "https
         val url = base.newBuilder().addPathSegments("api/v2/user").build()
         val o = http.json(http.request(url, accountToken).get().build()) as? JSONObject
             ?: return User(null, null)
-        val name = o.optString("username").ifEmpty { o.optString("title").ifEmpty { null } }
-        val thumb = o.optString("thumb").ifEmpty { null }?.takeIf { it.startsWith("https://") }
+        val name = o.optStr("username") ?: o.optStr("title")
+        val thumb = o.optStr("thumb")?.takeIf { it.startsWith("https://") }
         return User(name, thumb)
     }
+
+    private fun JSONObject.optStr(key: String): String? =
+        if (isNull(key)) null else optString(key).takeIf { it.isNotEmpty() && it != "null" }
 
     /** The signed-in account's name, for Settings. */
     fun userName(accountToken: String): String? = user(accountToken).name

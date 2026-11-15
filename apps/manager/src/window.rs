@@ -1025,8 +1025,8 @@ fn apply_install_detail(ui: &Ui) {
                 update.add_css_class("suggested-action");
                 update.connect_clicked(move |_| {
                     let p = path.clone();
-                    run_op("Install release APK", move || {
-                        current_tv()?.install_apk(&p, true)?;
+                    run_tv_op("Install release APK", move |tv| {
+                        tv.install_apk(&p, true)?;
                         let msg = format!("Installed {}", p.display());
                         glib::idle_add_once(|| {
                             push_activity("Installed Nyx TV release", "");
@@ -1059,8 +1059,8 @@ fn apply_install_detail(ui: &Ui) {
                 install.add_css_class("suggested-action");
                 install.connect_clicked(move |_| {
                     let p = path.clone();
-                    run_op("Install debug APK", move || {
-                        current_tv()?.install_apk(&p, true)?;
+                    run_tv_op("Install debug APK", move |tv| {
+                        tv.install_apk(&p, true)?;
                         let msg = format!("Installed {}", p.display());
                         glib::idle_add_once(|| {
                             push_activity("Installed Nyx TV debug", "");
@@ -1207,12 +1207,12 @@ fn uninstall_button() -> gtk::Button {
             "Uninstall Nyx TV?",
             &format!("Removes {NYX_TV_PKG} and/or {NYX_TV_PKG_DEBUG}. Stock launcher is not touched."),
             || {
-                run_op("Uninstall", || {
+                run_tv_op("Uninstall", |tv| {
                     let mut out = Vec::new();
-                    if uninstall_pkg(NYX_TV_PKG_DEBUG).is_ok() {
+                    if uninstall_pkg(&tv, NYX_TV_PKG_DEBUG).is_ok() {
                         out.push("debug");
                     }
-                    if uninstall_pkg(NYX_TV_PKG).is_ok() {
+                    if uninstall_pkg(&tv, NYX_TV_PKG).is_ok() {
                         out.push("release");
                     }
                     if out.is_empty() {
@@ -1523,8 +1523,8 @@ fn launcher_replace() -> (gtk::Box, [gtk::Label; 3], [gtk::Label; 3]) {
             "Set Nyx TV as the home app?",
             "Takes a snapshot, sets Nyx TV as HOME, then disables Google TV launcherx (and setupwraith).",
             || {
-                run_op("Replace launcher", || {
-                    let msg = replace_launcher()?;
+                run_tv_op("Replace launcher", |tv| {
+                    let msg = replace_launcher(&tv)?;
                     glib::idle_add_once(|| push_activity("Set Nyx TV as home", ""));
                     Ok(msg)
                 })
@@ -1700,23 +1700,29 @@ fn launcher_restore(
     let restore = gtk::Button::with_label("Restore Google TV home");
     restore.add_css_class("suggested-action");
     restore.connect_clicked(|_| {
+        let snap = with_ui(|ui| ui.state.borrow().last_snapshot.clone()).flatten();
         confirm_then(
             "Restore the original launcher?",
             "Re-enables Google TV home from the selected snapshot. Nyx TV stays installed.",
-            || run_op("Restore", restore_launcher),
+            move || {
+                let s = snap.clone();
+                run_tv_op("Restore", move |tv| restore_launcher(&tv, s))
+            },
         )
     });
     let remove = gtk::Button::with_label("Restore and remove Nyx TV");
     remove.add_css_class("flat");
     remove.connect_clicked(|_| {
+        let snap = with_ui(|ui| ui.state.borrow().last_snapshot.clone()).flatten();
         confirm_then(
             "Restore and uninstall Nyx TV?",
             "Restores Google TV home, then uninstalls Nyx TV (debug and release if present).",
-            || {
-                run_op("Restore and remove", || {
-                    restore_launcher()?;
-                    let _ = uninstall_pkg(NYX_TV_PKG_DEBUG);
-                    let _ = uninstall_pkg(NYX_TV_PKG);
+            move || {
+                let s = snap.clone();
+                run_tv_op("Restore and remove", move |tv| {
+                    restore_launcher(&tv, s)?;
+                    let _ = uninstall_pkg(&tv, NYX_TV_PKG_DEBUG);
+                    let _ = uninstall_pkg(&tv, NYX_TV_PKG);
                     Ok("Restored and removed Nyx TV".into())
                 })
             },
@@ -1754,7 +1760,7 @@ fn launcher_repair(
         confirm_then(
             "Repair Nyx TV as HOME?",
             "Re-snapshots and re-applies set-home + disable-stock for the installed package.",
-            || run_op("Repair", repair_launcher),
+            || run_tv_op("Repair", |tv| repair_launcher(&tv)),
         )
     });
     let not_now = gtk::Button::with_label("Not now");
@@ -1879,6 +1885,7 @@ fn fill_repair_placeholder() {
                 ui.repair_lede.set_text(lede);
             } else {
                 ui.repair_badge.set_text("Install first");
+                ui.repair_badge.remove_css_class("ok");
                 ui.repair_badge.add_css_class("wait");
                 ui.repair_headline.set_text("Nyx TV is not installed");
                 ui.repair_lede.set_text(
@@ -1916,6 +1923,7 @@ fn fill_repair_placeholder() {
             ));
         } else if online {
             ui.repair_badge.set_text("Checking");
+            ui.repair_badge.remove_css_class("ok");
             ui.repair_badge.add_css_class("wait");
             ui.repair_headline.set_text("Refreshing TV state");
             ui.repair_lede.set_text("");
@@ -1923,6 +1931,8 @@ fn fill_repair_placeholder() {
                 .append(&incident_check("wait", "Refreshing TV state"));
         } else {
             ui.repair_badge.set_text("Offline");
+            ui.repair_badge.remove_css_class("ok");
+            ui.repair_badge.remove_css_class("wait");
             ui.repair_headline.set_text("This TV isn't answering");
             ui.repair_lede
                 .set_text("Connect the TV over wireless debugging to repair.");
@@ -1983,8 +1993,8 @@ fn refresh_restore_list() {
                         take.add_css_class("suggested-action");
                         take.set_halign(gtk::Align::Start);
                         take.connect_clicked(|_| {
-                            run_op("Snapshot", || {
-                                let msg = snapshot_op()?;
+                            run_tv_op("Snapshot", |tv| {
+                                let msg = snapshot_op(&tv)?;
                                 glib::idle_add_once(|| {
                                     push_activity("Took a launcher snapshot", "");
                                     refresh_restore_list();
@@ -2191,8 +2201,8 @@ fn diagnostics_page() -> (gtk::Box, [gtk::Label; 4], [gtk::Label; 4], gtk::Label
     audit.add_css_class("suggested-action");
     audit.set_valign(gtk::Align::Center);
     audit.connect_clicked(|_| {
-        run_op("Audit", || {
-            let dir = current_tv()?.audit()?;
+        run_tv_op("Audit", |tv| {
+            let dir = tv.audit()?;
             Ok(format!("Wrote {}", dir.display()))
         });
         refresh_diagnostics();
@@ -2399,7 +2409,9 @@ fn set_status(_s: &str) {
 }
 
 pub fn set_status_pub(s: &str) {
-    set_status(s);
+    if !s.is_empty() {
+        toast(s);
+    }
 }
 
 /// After a TV is paired/connected and saved — reload sidebar and go to Overview.
@@ -2429,6 +2441,13 @@ fn current_serial() -> Result<String> {
 fn current_tv() -> Result<Tv> {
     let serial = current_serial()?;
     Ok(Tv::new(serial)?.with_root(devices::repo_root()))
+}
+
+fn run_tv_op(name: &str, f: impl FnOnce(Tv) -> Result<String> + Send + 'static) {
+    match current_tv() {
+        Ok(tv) => run_op(name, move || f(tv)),
+        Err(e) => toast(&format!("{name} failed · {e}")),
+    }
 }
 
 fn run_op(name: &str, f: impl FnOnce() -> Result<String> + Send + 'static) {
@@ -2864,9 +2883,9 @@ fn overview_primary_clicked() {
         OverviewMode::NotInstalled => {
             show_section("install");
             if find_local_apk(&devices::repo_root(), false).is_some() {
-                run_op("Install release APK", install_release_apk);
+                run_tv_op("Install release APK", |tv| install_release_apk(&tv));
             } else {
-                run_op("Install debug APK", install_debug_apk);
+                run_tv_op("Install debug APK", |tv| install_debug_apk(&tv));
             }
         }
         OverviewMode::SetHome => show_launcher_view("replace"),
@@ -3180,21 +3199,21 @@ fn refresh_overview() {
     });
 }
 
-fn install_debug_apk() -> Result<String> {
+fn install_debug_apk(tv: &Tv) -> Result<String> {
     let root = devices::repo_root();
     let apk = find_local_apk(&root, true).ok_or_else(|| {
         anyhow::anyhow!("No debug APK. Run: cd android && ./gradlew :app:assembleDebug")
     })?;
-    current_tv()?.install_apk(&apk, true)?;
+    tv.install_apk(&apk, true)?;
     Ok(format!("Installed {}", apk.display()))
 }
 
-fn install_release_apk() -> Result<String> {
+fn install_release_apk(tv: &Tv) -> Result<String> {
     let root = devices::repo_root();
     let apk = find_local_apk(&root, false).ok_or_else(|| {
         anyhow::anyhow!("No release APK. Run: cd android && ./gradlew :app:assembleRelease")
     })?;
-    current_tv()?.install_apk(&apk, true)?;
+    tv.install_apk(&apk, true)?;
     Ok(format!("Installed {}", apk.display()))
 }
 
@@ -3208,25 +3227,24 @@ fn pick_apk_and_install() {
             .default_filter(&filters)
             .build();
         dialog.open(Some(&ui.window), None::<&gio::Cancellable>, move |res| {
-            if let Ok(file) = res {
-                if let Some(path) = file.path() {
-                    run_op("Install APK", move || {
-                        current_tv()?.install_apk(&path, true)?;
-                        Ok(path.display().to_string())
-                    });
-                }
+            if let Ok(file) = res
+                && let Some(path) = file.path()
+            {
+                run_tv_op("Install APK", move |tv| {
+                    tv.install_apk(&path, true)?;
+                    Ok(path.display().to_string())
+                });
             }
         });
     });
 }
 
-fn uninstall_pkg(package: &str) -> Result<String> {
-    current_tv()?.uninstall_package(package, true)?;
+fn uninstall_pkg(tv: &Tv, package: &str) -> Result<String> {
+    tv.uninstall_package(package, true)?;
     Ok(format!("Uninstalled {package}"))
 }
 
-fn snapshot_op() -> Result<String> {
-    let tv = current_tv()?;
+fn snapshot_op(tv: &Tv) -> Result<String> {
     let snap = tv.snapshot()?;
     let path = snap
         .path
@@ -3242,8 +3260,7 @@ fn snapshot_op() -> Result<String> {
     Ok(format!("Saved {path}"))
 }
 
-fn replace_launcher() -> Result<String> {
-    let tv = current_tv()?;
+fn replace_launcher(tv: &Tv) -> Result<String> {
     let component = tv.home_component_for_installed()?;
     let snap = tv.replace_launcher(&component, true)?;
     let path = snap
@@ -3266,8 +3283,7 @@ fn replace_launcher() -> Result<String> {
     Ok(out)
 }
 
-fn verify_launcher() -> Result<String> {
-    let tv = current_tv()?;
+fn verify_launcher(tv: &Tv) -> Result<String> {
     let serial = tv.serial().to_string();
     let component = tv.home_component_for_installed()?;
     let report = tv.verify(&component)?;
@@ -3365,8 +3381,8 @@ fn verify_launcher() -> Result<String> {
             let restart = light_tile("idle", "Restart test", "Optional · not checked");
             let btn = gtk::Button::with_label("Restart TV");
             btn.connect_clicked(|_| {
-                run_op("Restart TV", || {
-                    current_tv()?.adb().shell(&["reboot"])?;
+                run_tv_op("Restart TV", |tv| {
+                    tv.adb().shell(&["reboot"])?;
                     Ok("Reboot sent".into())
                 })
             });
@@ -3382,7 +3398,7 @@ fn verify_launcher() -> Result<String> {
 }
 
 fn start_verify() {
-    run_op("Verify", verify_launcher);
+    run_tv_op("Verify", |tv| verify_launcher(&tv));
 }
 
 fn run_verify_ui() {
@@ -3396,11 +3412,8 @@ fn run_verify_ui() {
     refresh_page_bar();
 }
 
-fn restore_launcher() -> Result<String> {
-    let tv = current_tv()?;
-    let snap = with_ui(|ui| ui.state.borrow().last_snapshot.clone())
-        .flatten()
-        .ok_or_else(|| anyhow::anyhow!("Select a matching snapshot first"))?;
+fn restore_launcher(tv: &Tv, snap: Option<Snapshot>) -> Result<String> {
+    let snap = snap.ok_or_else(|| anyhow::anyhow!("Select a matching snapshot first"))?;
     let fp = tv.overview()?.fingerprint;
     if snap.fingerprint != fp {
         anyhow::bail!("Selected snapshot is for a different firmware");
@@ -3409,8 +3422,7 @@ fn restore_launcher() -> Result<String> {
     Ok("Stock launcher restored".into())
 }
 
-fn repair_launcher() -> Result<String> {
-    let tv = current_tv()?;
+fn repair_launcher(tv: &Tv) -> Result<String> {
     let snap = tv.repair(true)?;
     glib::idle_add_once(move || {
         let _ = with_ui(|ui| {
@@ -3429,13 +3441,13 @@ fn export_settings_dialog() {
             .initial_name("nyx-tv-settings.json")
             .build();
         dialog.save(Some(&ui.window), None::<&gio::Cancellable>, move |res| {
-            if let Ok(file) = res {
-                if let Some(path) = file.path() {
-                    run_op("Export settings", move || {
-                        current_tv()?.export_settings(&path)?;
-                        Ok(path.display().to_string())
-                    });
-                }
+            if let Ok(file) = res
+                && let Some(path) = file.path()
+            {
+                run_tv_op("Export settings", move |tv| {
+                    tv.export_settings(&path)?;
+                    Ok(path.display().to_string())
+                });
             }
         });
     });
@@ -3451,19 +3463,19 @@ fn import_settings_dialog() {
             .default_filter(&filters)
             .build();
         dialog.open(Some(&ui.window), None::<&gio::Cancellable>, move |res| {
-            if let Ok(file) = res {
-                if let Some(path) = file.path() {
-                    confirm_then(
-                        "Import settings?",
-                        "Replaces layout and preferences on the TV. Plex sign-in is not in this file.",
-                        move || {
-                            run_op("Import settings", move || {
-                                current_tv()?.import_settings(&path)?;
-                                Ok(path.display().to_string())
-                            })
-                        },
-                    );
-                }
+            if let Ok(file) = res
+                && let Some(path) = file.path()
+            {
+                confirm_then(
+                    "Import settings?",
+                    "Replaces layout and preferences on the TV. Plex sign-in is not in this file.",
+                    move || {
+                        run_tv_op("Import settings", move |tv| {
+                            tv.import_settings(&path)?;
+                            Ok(path.display().to_string())
+                        })
+                    },
+                );
             }
         });
     });
@@ -3475,20 +3487,20 @@ fn export_diagnostics_dialog() {
             .title("Export diagnostics")
             .build();
         dialog.select_folder(Some(&ui.window), None::<&gio::Cancellable>, move |res| {
-            if let Ok(file) = res {
-                if let Some(dir) = file.path() {
-                    let dest = dir.join(format!(
-                        "nyx-tv-diag-{}",
-                        std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .map(|d| d.as_secs())
-                            .unwrap_or(0)
-                    ));
-                    run_op("Export diagnostics", move || {
-                        let out = current_tv()?.export_diagnostics(&dest)?;
-                        Ok(format!("Wrote {}", out.display()))
-                    });
-                }
+            if let Ok(file) = res
+                && let Some(dir) = file.path()
+            {
+                let dest = dir.join(format!(
+                    "nyx-tv-diag-{}",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0)
+                ));
+                run_tv_op("Export diagnostics", move |tv| {
+                    let out = tv.export_diagnostics(&dest)?;
+                    Ok(format!("Wrote {}", out.display()))
+                });
             }
         });
     });
@@ -3500,11 +3512,11 @@ fn export_snapshots_dialog() {
             .title("Export system snapshots")
             .build();
         dialog.select_folder(Some(&ui.window), None::<&gio::Cancellable>, move |res| {
-            if let Ok(file) = res {
-                if let Some(dir) = file.path() {
-                    run_op("Export snapshots", move || {
-                        let tv = current_tv()?;
-                        let fp = tv.overview()?.fingerprint;
+            if let Ok(file) = res
+                && let Some(dir) = file.path()
+            {
+                run_tv_op("Export snapshots", move |tv| {
+                    let fp = tv.overview()?.fingerprint;
                         let snaps = tv.list_snapshots()?;
                         let matching: Vec<_> = snaps
                             .into_iter()
@@ -3527,7 +3539,6 @@ fn export_snapshots_dialog() {
                         ))
                     });
                 }
-            }
         });
     });
 }
@@ -3592,15 +3603,15 @@ fn copy_layout_to_other() {
         toast("Add another TV first");
         return;
     };
-    run_op("Copy layout", move || copy_layout_to(&serial));
+    run_tv_op("Copy layout", move |tv| copy_layout_to(&tv, &serial));
 }
 
-fn copy_layout_to(target_serial: &str) -> Result<String> {
+fn copy_layout_to(tv: &Tv, target_serial: &str) -> Result<String> {
     let tmp = devices::repo_root().join("audit").join("layout-copy-tmp.json");
     if let Some(parent) = tmp.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    current_tv()?.export_settings(&tmp)?;
+    tv.export_settings(&tmp)?;
     Tv::new(target_serial)?
         .with_root(devices::repo_root())
         .import_settings(&tmp)?;
@@ -3864,8 +3875,7 @@ fn confirm_debloat() {
         ),
         move || {
             let pkgs = pkgs.clone();
-            run_op("Debloat", move || {
-                let tv = current_tv()?;
+            run_tv_op("Debloat", move |tv| {
                 let _ = tv.snapshot();
                 let refs: Vec<&str> = pkgs.iter().map(|s| s.as_str()).collect();
                 let done = tv.disable_packages(&refs, true)?;
@@ -3913,8 +3923,7 @@ fn confirm_debloat_enable() {
         &format!("{names}."),
         move || {
             let pkgs = pkgs.clone();
-            run_op("Enable packages", move || {
-                let tv = current_tv()?;
+            run_tv_op("Enable packages", move |tv| {
                 let refs: Vec<&str> = pkgs.iter().map(|s| s.as_str()).collect();
                 let done = tv.enable_packages(&refs)?;
                 glib::idle_add_once(|| {

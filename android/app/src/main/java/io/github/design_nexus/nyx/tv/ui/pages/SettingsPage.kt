@@ -335,6 +335,7 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
                 if (e.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
                 if (code == KeyEvent.KEYCODE_DPAD_LEFT) { leaveBodyToSidebar(); return@setOnKeyListener true }
                 if (movingRow == r.id && (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN)) {
+                    restoreFocusTag = r.id
                     a.app.config.update { it.moveRow(r.id, if (code == KeyEvent.KEYCODE_DPAD_UP) -1 else 1) }
                     body.post { focusRow(r.id) }
                     return@setOnKeyListener true
@@ -464,10 +465,10 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
                 if (!last) marginEnd = a.dp(5)
             })
         }
-        sideCol.clipChildren = true
+        sideCol.clipChildren = false
         sideCol.addView(accents, llp(MATCH, WRAP) { bottomMargin = a.dp(14) })
 
-        val footer = hlinear(a)
+        val footer = hlinear(a).apply { clipChildren = false }
         val cancel = PillButton(a, p, "Cancel").also { it.id = View.generateViewId(); it.contentDescription = "Cancel" }
         val apply = PillButton(a, p, "Apply", primary = true).also { it.id = View.generateViewId(); it.contentDescription = "Apply" }
         appearanceCancel = cancel
@@ -975,7 +976,7 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
         action("Memory", "Proportional set size of Nyx TV right now", "${mem.totalPss / 1024} MB") {}
         action("Last start", "Process start to first frame", "${prefs.getLong("last_start_ms", 0)} ms") {}
         action("Artwork cache", null, "${(a.app.images.diskCache?.size ?: 0) / (1024 * 1024)} MB on disk · ${(a.app.images.memoryCache?.size ?: 0) / (1024 * 1024)} MB in memory") {}
-        action("Clear artwork cache") { a.app.images.memoryCache?.clear(); a.app.images.diskCache?.clear(); renderBody() }
+        action("Clear artwork cache") { a.app.images.memoryCache?.clear(); a.app.images.diskCache?.clear(); renderBody(keepFocus = true) }
         group("Privacy")
         body.addView(a.text(12f, p.sub0, lines = 4, s = "No telemetry, no ads, no accounts other than Plex. Settings backups made by TV Manager never include your Plex sign-in."), llp(MATCH, WRAP) { setMargins(a.dp(14), a.dp(4), a.dp(14), 0) })
     }

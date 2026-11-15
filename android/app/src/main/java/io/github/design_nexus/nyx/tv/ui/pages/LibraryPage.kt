@@ -124,6 +124,9 @@ class LibraryPage(a: HomeActivity, private val kind: Kind) : Page(a), RowHost {
             library = libraries.firstOrNull()
             buildChips(runCatching { library?.let { provider.genres(it.id) } }.getOrNull().orEmpty())
             reload()
+            if (root.isAttachedToWindow && root.findFocus() == null && a.currentRootTab() == tab) {
+                chips.getChildAt(0)?.requestFocus()
+            }
         }
     }
 
@@ -228,7 +231,10 @@ class LibraryPage(a: HomeActivity, private val kind: Kind) : Page(a), RowHost {
         if (i.kind == MediaKind.MOVIE) items += MenuPanel.Item(if (i.progress > 0) "Resume" else "Play") { a.play(i) }
         items += MenuPanel.Item("Details") { a.openDetails(i) }
         if (i.kind != MediaKind.COLLECTION) items += MenuPanel.Item(if (i.watched) "Mark as unwatched" else "Mark as watched") {
-            a.scope.launch { runCatching { provider.setWatched(i, !i.watched) }; reload() }
+            a.scope.launch {
+                runCatching { provider.setWatched(i, !i.watched) }.onFailure { a.toast("Couldn't update watched state") }
+                reload()
+            }
         }
         a.showMenu(i.title, i.year?.toString(), items)
     }

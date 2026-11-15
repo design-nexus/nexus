@@ -15,7 +15,10 @@ class Backoff(
         private set
 
     fun next(): Long {
-        val exp = baseMs * (1L shl attempt.coerceAtMost(20))
+        val shift = attempt.coerceAtMost(20)
+        val exp = if (baseMs <= 0L) 0L
+        else if (baseMs > maxMs / (1L shl shift)) maxMs
+        else baseMs * (1L shl shift)
         val capped = exp.coerceAtMost(maxMs)
         attempt++
         val jitter = (capped * 0.2 * random.nextDouble()).toLong()

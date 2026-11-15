@@ -23,6 +23,7 @@ import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import kotlinx.coroutines.Job
 import androidx.media3.common.MediaItem as ExoMediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -113,6 +114,8 @@ class PlayerActivity : Activity() {
     private var chromeVisible = true
     private var triedTranscode = false
     private var ending = false
+    private var startJob: Job? = null
+    private var lastTimelineAtMs = 0L
     private var audioId: Int? = null
     private var subtitleId: Int? = null
     private var speed = 1f
@@ -122,6 +125,7 @@ class PlayerActivity : Activity() {
     /** Submenu was opened from Settings hub — Back/Left returns to Settings instead of closing. */
     private var menuFromSettings = false
     private var settingsFocusIndex = 4
+    private var backLongPressHandled = false
     private var offsetValueView: TextView? = null
     private var pendingTranscodeMs = -1L
     private val transcodeSeekRunnable = Runnable {
@@ -187,7 +191,6 @@ class PlayerActivity : Activity() {
         topTitle.text = intent.getStringExtra(EXTRA_TITLE).orEmpty()
         showChrome(focusScrubber = true)
         loadAndPlay()
-        main.post(tick)
     }
 
     private fun buildChrome() {
@@ -420,8 +423,9 @@ class PlayerActivity : Activity() {
     }
 
     private fun startStream(mode: StreamMode) {
+        startJob?.cancel()
         spinner.visibility = View.VISIBLE
-        scope.launch {
+        startJob = scope.launch {
             val item = info?.item ?: MediaItem(
                 server = io.github.design_nexus.nyx.tv.media.ServerRef("plex", ""),
                 id = itemId, kind = MediaKind.MOVIE, title = topTitle.text.toString(),
@@ -431,6 +435,8 @@ class PlayerActivity : Activity() {
                 withContext(Dispatchers.IO) {
                     app.plex.resolvePlayback(item, resumeMs, mode, audioId, subtitleId)
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 if (mode == StreamMode.DIRECT && !triedTranscode) {
                     triedTranscode = true
@@ -440,6 +446,9 @@ class PlayerActivity : Activity() {
                 toast(e.message ?: "Playback failed")
                 finish(); return@launch
             }
+            source?.takeIf { it.mode == StreamMode.TRANSCODE && it.sessionId != stream.sessionId }?.let { prev ->
+                app.scope.launch { runCatching { app.plex.stopPlaybackSession(prev.sessionId) } }
+            }
             source = stream
             attachPlayer(stream)
         }
@@ -447,7 +456,7 @@ class PlayerActivity : Activity() {
 
     private fun attachPlayer(stream: StreamSource) {
         releasePlayer(report = false)
-        val http = OkHttpClient.Builder()
+        val http = app.http.newBuilder()
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .followRedirects(true)
@@ -520,7 +529,13 @@ class PlayerActivity : Activity() {
             ) {
                 hideChrome()
             }
-            if (player?.isPlaying == true && System.currentTimeMillis() % 10000 < 500) report(TimelineState.PLAYING)
+            if (player?.isPlaying == true) {
+                val nowElapsed = android.os.SystemClock.elapsedRealtime()
+                if (nowElapsed - lastTimelineAtMs >= 10_000L) {
+                    lastTimelineAtMs = nowElapsed
+                    report(TimelineState.PLAYING)
+                }
+            }
             main.postDelayed(this, 400)
         }
     }
@@ -977,7 +992,8 @@ class PlayerActivity : Activity() {
     private fun report(state: TimelineState) {
         val s = source ?: return
         val pos = absolutePosition()
-        scope.launch {
+        val targetScope = if (state == TimelineState.STOPPED) app.scope else scope
+        targetScope.launch {
             runCatching {
                 app.plex.reportTimeline(TimelineUpdate(itemId, s.sessionId, state, pos, source?.durationMs ?: durationHint))
             }
@@ -989,7 +1005,7 @@ class PlayerActivity : Activity() {
         ending = true
         report(TimelineState.STOPPED)
         source?.takeIf { it.mode == StreamMode.TRANSCODE }?.let { s ->
-            scope.launch { runCatching { app.plex.stopPlaybackSession(s.sessionId) } }
+            app.scope.launch { runCatching { app.plex.stopPlaybackSession(s.sessionId) } }
         }
         releasePlayer(false)
         finish()
@@ -997,7 +1013,7 @@ class PlayerActivity : Activity() {
 
     private fun releasePlayer(report: Boolean) {
         if (report) report(TimelineState.STOPPED)
-        playerView.player = null
+        if (::playerView.isInitialized) playerView.player = null
         player?.release()
         player = null
     }
@@ -1008,26 +1024,62 @@ class PlayerActivity : Activity() {
      * Visible: OK activate · ←→ seek on scrubber · ↑ Subs/Settings · ↓ Chapters · Back hide
      * Settings: L/R drill or nudge offset · Down on Audio sync / Back closes panel
      */
+    private fun launchHomeOverlay(extra: String) {
+        startActivity(
+            android.content.Intent(this, io.github.design_nexus.nyx.tv.ui.HomeActivity::class.java)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra(extra, true),
+        )
+    }
+
+    private fun handleBackPress(): Boolean {
+        if (menuOpen) {
+            when (menuKind) {
+                Menu.SETTINGS -> if (handleSettingsKeys(KeyEvent.KEYCODE_BACK)) return true
+                Menu.QUALITY, Menu.OPTIONS, Menu.AUDIO, Menu.SUBS -> if (handleSubmenuKeys(KeyEvent.KEYCODE_BACK)) return true
+                Menu.NONE -> {}
+            }
+            return false
+        }
+        if (upNextSeconds >= 0) { cancelUpNext(startNext = false); return true }
+        if (chromeVisible) { hideChrome(); return true }
+        finishPlayback()
+        return true
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
         val key = event.keyCode
+        if (key == KeyEvent.KEYCODE_BACK) {
+            when (event.action) {
+                KeyEvent.ACTION_DOWN -> {
+                    if (event.repeatCount == 0) {
+                        backLongPressHandled = false
+                    } else if (!backLongPressHandled) {
+                        backLongPressHandled = true
+                        launchHomeOverlay(io.github.design_nexus.nyx.tv.ui.HomeActivity.EXTRA_OPEN_QUICK_SETTINGS)
+                    }
+                    return true
+                }
+                KeyEvent.ACTION_UP -> {
+                    if (backLongPressHandled) {
+                        backLongPressHandled = false
+                        return true
+                    }
+                    if (handleBackPress()) return true
+                    return super.dispatchKeyEvent(event)
+                }
+            }
+        }
+        if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
 
         // Launcher remote keys: leave playback and open Home overlays.
         when (key) {
             KeyEvent.KEYCODE_SETTINGS, KeyEvent.KEYCODE_NOTIFICATION -> {
-                startActivity(
-                    android.content.Intent(this, io.github.design_nexus.nyx.tv.ui.HomeActivity::class.java)
-                        .addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                        .putExtra(io.github.design_nexus.nyx.tv.ui.HomeActivity.EXTRA_OPEN_QUICK_SETTINGS, true),
-                )
+                launchHomeOverlay(io.github.design_nexus.nyx.tv.ui.HomeActivity.EXTRA_OPEN_QUICK_SETTINGS)
                 return true
             }
             KeyEvent.KEYCODE_TV_INPUT, KeyEvent.KEYCODE_WINDOW -> {
-                startActivity(
-                    android.content.Intent(this, io.github.design_nexus.nyx.tv.ui.HomeActivity::class.java)
-                        .addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                        .putExtra(io.github.design_nexus.nyx.tv.ui.HomeActivity.EXTRA_OPEN_INPUTS, true),
-                )
+                launchHomeOverlay(io.github.design_nexus.nyx.tv.ui.HomeActivity.EXTRA_OPEN_INPUTS)
                 return true
             }
         }
@@ -1041,11 +1093,8 @@ class PlayerActivity : Activity() {
             return super.dispatchKeyEvent(event)
         }
 
-        if (key == KeyEvent.KEYCODE_BACK || key == KeyEvent.KEYCODE_ESCAPE) {
-            if (upNextSeconds >= 0) { cancelUpNext(startNext = false); return true }
-            if (chromeVisible) { hideChrome(); return true }
-            finishPlayback()
-            return true
+        if (key == KeyEvent.KEYCODE_ESCAPE) {
+            return handleBackPress()
         }
 
         if (!chromeVisible) {
@@ -1188,8 +1237,17 @@ class PlayerActivity : Activity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (::playerView.isInitialized) {
+            main.removeCallbacks(tick)
+            main.post(tick)
+        }
+    }
+
     override fun onStop() {
         super.onStop()
+        main.removeCallbacks(tick)
         if (!isFinishing) player?.pause()
     }
 
@@ -1200,7 +1258,7 @@ class PlayerActivity : Activity() {
         if (!ending) {
             report(TimelineState.STOPPED)
             source?.takeIf { it.mode == StreamMode.TRANSCODE }?.let { s ->
-                scope.launch { runCatching { app.plex.stopPlaybackSession(s.sessionId) } }
+                app.scope.launch { runCatching { app.plex.stopPlaybackSession(s.sessionId) } }
             }
         }
         releasePlayer(false)

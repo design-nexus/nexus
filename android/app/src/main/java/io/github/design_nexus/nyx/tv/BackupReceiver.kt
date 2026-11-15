@@ -5,7 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import io.github.design_nexus.nyx.tv.core.ConfigCodec
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import org.json.JSONObject
 import java.io.File
 
 /**
@@ -24,24 +26,38 @@ class BackupReceiver : BroadcastReceiver() {
         val app = context.applicationContext as NyxTvApp
         val dir = context.getExternalFilesDir(null) ?: return
         val file = File(dir, FILE)
-        runBlocking { app.config.load() }
-        when (intent.action) {
-            EXPORT -> {
-                file.writeText(app.config.export())
-                resultCode = 1
-                resultData = file.absolutePath
-            }
-            IMPORT -> {
-                val text = runCatching { file.readText() }.getOrNull()
-                if (text == null) { resultCode = 0; resultData = "no file"; return }
-                val decoded = ConfigCodec.decode(text)
-                app.config.update { decoded }
-                file.delete()
-                resultCode = 1
-                resultData = "imported"
+        val pending = goAsync()
+        app.scope.launch(Dispatchers.IO) {
+            try {
+                app.config.load()
+                when (intent.action) {
+                    EXPORT -> {
+                        file.writeText(app.config.export())
+                        pending.resultCode = 1
+                        pending.resultData = file.absolutePath
+                    }
+                    IMPORT -> {
+                        val text = runCatching { file.readText() }.getOrNull()
+                        if (text == null) {
+                            pending.resultCode = 0
+                            pending.resultData = "no file"
+                        } else if (runCatching { JSONObject(text) }.isFailure) {
+                            pending.resultCode = 0
+                            pending.resultData = "invalid json"
+                        } else {
+                            val decoded = ConfigCodec.decode(text)
+                            app.config.updateAndAwait { decoded }
+                            file.delete()
+                            pending.resultCode = 1
+                            pending.resultData = "imported"
+                        }
+                    }
+                }
+                Log.i("NyxTV", "backup: ${intent.action} -> ${pending.resultData}")
+            } finally {
+                pending.finish()
             }
         }
-        Log.i("NyxTV", "backup: ${intent.action} -> $resultData")
     }
 
     companion object {

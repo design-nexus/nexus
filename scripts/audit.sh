@@ -6,12 +6,12 @@ set -euo pipefail
 serial=${1:?usage: scripts/audit.sh SERIAL}
 cd "$(dirname "$0")/.."
 a() { adb -s "$serial" "$@"; }
-sh() { a shell "$@" 2>&1 || true; }
+adb_sh() { a shell "$@" 2>&1 || true; }
 
 model=$(a shell getprop ro.product.model | tr -d '\r' | tr ' ' '_')
 out="audit/${model:-tv}-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$out"
-save() { local name=$1; shift; sh "$@" >"$out/$name.txt"; echo "  $name"; }
+save() { local name=$1; shift; adb_sh "$@" >"$out/$name.txt"; echo "  $name"; }
 echo "Auditing $serial into $out"
 
 save getprop getprop

@@ -343,10 +343,7 @@ impl Tv {
 
     /// Save current HOME state under `audit/snapshot-<model>-<ts>.env`.
     pub fn snapshot(&self) -> Result<Snapshot> {
-        let model = self
-            .adb
-            .getprop("ro.product.model")?
-            .replace(' ', "_");
+        let model = fingerprint_safe(&self.adb.getprop("ro.product.model")?);
         let fingerprint = self.adb.getprop("ro.build.fingerprint")?;
         let home = self.home_now()?;
         let role_home = self.role_now()?;
@@ -467,10 +464,10 @@ impl Tv {
         }
         self.ensure_fingerprint(&snap.fingerprint)?;
         if snap.setupwraith_state == "enabled" && self.package_present(SETUPWRAITH)? {
-            let _ = self.adb.shell_ok(&["pm", "enable", SETUPWRAITH]);
+            self.adb.shell(&["pm", "enable", SETUPWRAITH])?;
         }
         if snap.stock_state == "enabled" {
-            let _ = self.adb.shell_ok(&["pm", "enable", STOCK_LAUNCHER]);
+            self.adb.shell(&["pm", "enable", STOCK_LAUNCHER])?;
         }
         let home = if snap.home.is_empty() {
             STOCK_HOME
@@ -519,6 +516,10 @@ impl Tv {
         let settings_ok = !settings.is_empty()
             && (settings.to_lowercase().contains("settings")
                 || settings.contains("com.android.tv.settings"));
+        if !settings_ok {
+            lines.push("FAIL: Settings did not open".into());
+            ok = false;
+        }
 
         let _ = self.adb.shell_ok(&[
             "am",
@@ -532,6 +533,10 @@ impl Tv {
         lines.push(format!("Play Store -> {play}"));
         let play_ok = !play.is_empty()
             && (play.contains("vending") || play.contains("finsky") || play.contains("Play"));
+        if !play_ok {
+            lines.push("FAIL: Play Store did not open".into());
+            ok = false;
+        }
 
         self.adb.shell(&["input", "keyevent", "KEYCODE_HOME"])?;
         thread::sleep(Duration::from_secs(2));
@@ -553,12 +558,18 @@ impl Tv {
     fn resumed(&self) -> Result<String> {
         let out = self.adb.shell_ok(&["dumpsys", "activity", "activities"])?;
         for line in out.lines() {
-            if let Some(idx) = line.find("mResumedActivity: ActivityRecord{") {
-                let rest = &line[idx..];
-                let parts: Vec<_> = rest.split_whitespace().collect();
-                // ActivityRecord{hash user component ...
-                if parts.len() >= 3 {
-                    return Ok(parts[2].to_string());
+            for marker in [
+                "mResumedActivity: ActivityRecord{",
+                "topResumedActivity=ActivityRecord{",
+                "ResumedActivity: ActivityRecord{",
+            ] {
+                if let Some(idx) = line.find(marker) {
+                    let rest = &line[idx..];
+                    let parts: Vec<_> = rest.split_whitespace().collect();
+                    // ActivityRecord{hash user component ...
+                    if parts.len() >= 3 {
+                        return Ok(parts[2].to_string());
+                    }
                 }
             }
         }
@@ -663,10 +674,7 @@ impl Tv {
 
     /// Read-only diagnostics dump into `audit/<model>-<ts>/`.
     pub fn audit(&self) -> Result<PathBuf> {
-        let model = self
-            .adb
-            .getprop("ro.product.model")?
-            .replace(' ', "_");
+        let model = fingerprint_safe(&self.adb.getprop("ro.product.model")?);
         let dir = self.root.join("audit").join(format!(
             "{}-{}",
             model,
@@ -901,9 +909,14 @@ impl Tv {
         if !confirm {
             bail!("disable_packages refused: confirm was false");
         }
+        let catalog = self.debloat_catalog_entries().unwrap_or_default();
         let mut done = Vec::new();
         for pkg in packages {
-            if Self::debloat_is_protected(pkg) {
+            if Self::debloat_is_protected(pkg)
+                || catalog
+                    .iter()
+                    .any(|(p, _, k)| p == pkg && *k == DebloatKind::Protected)
+            {
                 bail!("refusing to disable protected package {pkg}");
             }
             if !self.package_present(pkg)? {
@@ -1076,12 +1089,20 @@ fn parse_proc_stat_cpu(s: &str) -> Option<(u64, u64)> {
 fn redact_log_line(line: &str) -> String {
     let mut s = line.to_string();
     for key in ["token", "Token", "auth", "Auth"] {
-        if let Some(i) = s.find(key) {
-            if let Some(rest) = s.get(i..) {
-                if rest.len() > key.len() + 8 {
-                    let end = (i + key.len() + 4).min(s.len());
-                    s.replace_range(end..s.len().min(end + 24), "••••••••");
-                }
+        if let Some(i) = s.find(key)
+            && let Some(rest) = s.get(i..)
+            && rest.len() > key.len() + 8
+        {
+            let mut start = (i + key.len() + 4).min(s.len());
+            while start < s.len() && !s.is_char_boundary(start) {
+                start += 1;
+            }
+            let mut end = (start + 24).min(s.len());
+            while end > start && !s.is_char_boundary(end) {
+                end -= 1;
+            }
+            if start < end {
+                s.replace_range(start..end, "••••••••");
             }
         }
     }
@@ -1144,9 +1165,9 @@ pub fn apk_info(path: &Path) -> ApkInfo {
     let modified_label = fs::metadata(path)
         .and_then(|m| m.modified())
         .ok()
-        .and_then(|t| {
+        .map(|t| {
             let dt: chrono::DateTime<Local> = t.into();
-            Some(dt.format("%b %-d").to_string())
+            dt.format("%b %-d").to_string()
         })
         .unwrap_or_else(|| "—".into());
 
@@ -1220,11 +1241,13 @@ fn aapt_badging(path: &Path) -> Option<(String, Option<u32>, Option<String>)> {
     }
     bins.push(PathBuf::from("aapt"));
     for bin in bins {
-        let out = std::process::Command::new(&bin)
+        let Ok(out) = std::process::Command::new(&bin)
             .args(["dump", "badging"])
             .arg(path)
             .output()
-            .ok()?;
+        else {
+            continue;
+        };
         if !out.status.success() {
             continue;
         }

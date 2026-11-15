@@ -33,12 +33,14 @@ class AmbientView(ctx: Context, private val p: Palette, private val source: Ambi
     private val clockBox = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
     private val clock = ctx.text(72f, Color.WHITE, LIGHT)
     private val date = ctx.text(15f, 0xD9FFFFFF.toInt())
-    private val caption = ctx.text(13f, 0xCCFFFFFF.toInt(), MEDIUM).apply { gravity = Gravity.END }
+    private val caption = ctx.text(13f, 0xCCFFFFFF.toInt(), MEDIUM, lines = 2).apply { gravity = Gravity.END }
     private val handler = Handler(Looper.getMainLooper())
     private var items: List<MediaItem> = emptyList()
     private var index = 0
     private var loader: ImageLoader? = null
     private var provider: MediaProvider? = null
+    private var imageDisposable: coil3.request.Disposable? = null
+    @Volatile private var active = false
 
     init {
         setBackgroundColor(Color.BLACK)
@@ -79,6 +81,7 @@ class AmbientView(ctx: Context, private val p: Palette, private val source: Ambi
     }
 
     fun start(cache: MetadataCache, provider: MediaProvider, loader: ImageLoader) {
+        active = true
         this.loader = loader
         this.provider = provider
         handler.post(tick)
@@ -87,27 +90,43 @@ class AmbientView(ctx: Context, private val p: Palette, private val source: Ambi
                 val list = listOf("RECENT_MOVIES", "RECENT_SHOWS", "CONTINUE_WATCHING", "COLLECTIONS").flatMap { t ->
                     runCatching { cache.readableDatabase.rawQuery("SELECT key FROM rows WHERE key LIKE ?", arrayOf("%:$t:%")).use { c -> generateSequence { if (c.moveToNext()) c.getString(0) else null }.toList() } }.getOrDefault(emptyList())
                 }.flatMap { cache.get(it).orEmpty() }.filter { it.backdrop != null }.distinctBy { it.key }.shuffled()
-                handler.post { items = list; handler.post(next) }
+                handler.post {
+                    if (!active) return@post
+                    items = list
+                    handler.post(next)
+                }
             }.start()
         }
     }
 
     private fun show() {
+        if (!active) return
         val l = loader ?: return
         val pr = provider ?: return
         if (items.isEmpty()) return
         val item = items[index++ % items.size]
         caption.text = listOfNotNull(item.seriesTitle ?: item.title, item.year?.toString()).joinToString(" · ") + "\nIn your Plex library"
         val url = pr.imageUrl(item.backdrop, 1280, 720) ?: return
+        image.animate().cancel()
         image.animate().alpha(0f).setDuration(600).withEndAction {
-            l.enqueue(ImageRequest.Builder(context).data(url).size(1280, 720).target(
-                onSuccess = { img -> image.setImageDrawable(img.asDrawable(resources)); image.animate().alpha(1f).setDuration(900).start() },
+            if (!active) return@withEndAction
+            imageDisposable?.dispose()
+            imageDisposable = l.enqueue(ImageRequest.Builder(context).data(url).size(1280, 720).target(
+                onSuccess = { img ->
+                    if (!active) return@target
+                    image.setImageDrawable(img.asDrawable(resources))
+                    image.animate().alpha(1f).setDuration(900).start()
+                },
             ).apply { pr.imageCacheKey(item.backdrop, 1280, 720)?.let { diskCacheKey(it); memoryCacheKey(it) } }.build())
         }.start()
     }
 
     fun stop() {
+        active = false
         handler.removeCallbacksAndMessages(null)
+        image.animate().cancel()
+        imageDisposable?.dispose()
+        imageDisposable = null
         image.setImageDrawable(null)
     }
 
