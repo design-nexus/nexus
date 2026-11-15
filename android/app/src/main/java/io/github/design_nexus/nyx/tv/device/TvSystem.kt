@@ -23,6 +23,16 @@ class TvSystem(private val context: Context) {
         DATE(listOf(Settings.ACTION_DATE_SETTINGS)),
         SCREENSAVER(listOf(Settings.ACTION_DREAM_SETTINGS)),
         ABOUT(listOf(Settings.ACTION_DEVICE_INFO_SETTINGS)),
+        /** Power / energy / sleep screens — first match that resolves wins. */
+        POWER(
+            listOf(
+                "android.settings.POWER_USAGE_SUMMARY",
+                "com.android.tv.settings.action.POWER",
+                "android.settings.DISPLAY_SETTINGS",
+                Settings.ACTION_DISPLAY_SETTINGS,
+                Settings.ACTION_SETTINGS,
+            ),
+        ),
         ALL(listOf(Settings.ACTION_SETTINGS)),
     }
 
@@ -36,21 +46,55 @@ class TvSystem(private val context: Context) {
         return false
     }
 
-    /** HDMI and other inputs the TV input framework lists. Empty when the TV doesn't expose them. */
+    /**
+     * HDMI and other inputs the TV input framework lists.
+     * Dedupes identical labels (e.g. Apple TV listed twice) preferring a connected input.
+     */
     fun inputs(): List<Input> {
         val tim = context.getSystemService(TvInputManager::class.java) ?: return emptyList()
         return runCatching {
-            tim.tvInputList.filter { it.isPassthroughInput || it.type == TvInputInfo.TYPE_TUNER }.map { info ->
-                val label = (runCatching { info.loadCustomLabel(context) }.getOrNull() ?: info.loadLabel(context)).toString()
-                Input(info.id, label, info.type, info.isPassthroughInput)
+            val raw = tim.tvInputList
+                .filter { it.isPassthroughInput || it.type == TvInputInfo.TYPE_TUNER }
+                .map { info ->
+                    val label = (runCatching { info.loadCustomLabel(context) }.getOrNull()
+                        ?: info.loadLabel(context)).toString()
+                    Input(info.id, label, info.type, info.isPassthroughInput)
+                }
+                .distinctBy { it.id }
+            collapseDuplicateLabels(raw) { id ->
+                runCatching { tim.getInputState(id) }.getOrNull() == TvInputManager.INPUT_STATE_CONNECTED
             }
         }.getOrDefault(emptyList())
     }
 
     /** Switches to [input] through the TV app that handles passthrough channels. */
     fun switchTo(input: Input): Boolean {
-        val uri = if (input.passthrough) TvContract.buildChannelUriForPassthroughInput(input.id) else TvContract.buildChannelsUriForInput(input.id)
+        val uri = if (input.passthrough) {
+            TvContract.buildChannelUriForPassthroughInput(input.id)
+        } else {
+            TvContract.buildChannelsUriForInput(input.id)
+        }
         val i = Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         return runCatching { context.startActivity(i) }.isSuccess
+    }
+
+    companion object {
+        /** Keep first of each label; if duplicates, prefer [isConnected]. */
+        internal fun collapseDuplicateLabels(
+            inputs: List<Input>,
+            isConnected: (String) -> Boolean,
+        ): List<Input> {
+            val byLabel = LinkedHashMap<String, Input>()
+            for (input in inputs) {
+                val key = input.label.trim().lowercase()
+                val prev = byLabel[key]
+                when {
+                    prev == null -> byLabel[key] = input
+                    isConnected(input.id) && !isConnected(prev.id) -> byLabel[key] = input
+                    // else keep prev (first seen, or already connected)
+                }
+            }
+            return byLabel.values.toList()
+        }
     }
 }

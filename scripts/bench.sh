@@ -90,13 +90,14 @@ if [[ -n $nyx_pkg && -n $nyx_home ]]; then
   say "Cold start → ${cold_ms:-timeout} ms"
 
   say "Warm start"
-  start=$(date +%s%3N)
   if [[ $nyx_is_home -eq 1 ]]; then
+    # Leave Home first so the second Home press is a real return, not a no-op.
+    run shell am start -W -a android.settings.SETTINGS >/dev/null 2>&1 || true
+    sleep 1
+    start=$(date +%s%3N)
     run shell input keyevent KEYCODE_HOME >/dev/null
-    sleep 0.3
-    run shell input keyevent KEYCODE_HOME >/dev/null
-    for i in $(seq 1 20); do
-      sleep 0.15
+    for i in $(seq 1 40); do
+      sleep 0.1
       resumed=$(run shell dumpsys activity activities 2>/dev/null | tr -d '\r' | grep -o 'mResumedActivity: ActivityRecord{[^}]*}' | head -1 || true)
       if [[ $resumed == *"$nyx_pkg"* ]]; then
         end=$(date +%s%3N)
@@ -105,6 +106,7 @@ if [[ -n $nyx_pkg && -n $nyx_home ]]; then
       fi
     done
   else
+    start=$(date +%s%3N)
     warm_ms=$(run shell am start -W -n "$nyx_home" 2>/dev/null | tr -d '\r' | awk -F': ' '/ThisTime|TotalTime/{print $2; exit}')
   fi
   printf 'warm_ms=%s\n' "${warm_ms:-}" >"$out/warm.txt"

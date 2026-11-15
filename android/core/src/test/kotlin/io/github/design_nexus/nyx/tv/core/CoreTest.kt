@@ -89,5 +89,9 @@ class FocusMemoryTest {
         assertEquals("continue", f.rowToFocus(listOf("continue")))
         f.forget("movies")
         assertEquals(0, f.positionIn("movies", 5))
+        f.clear()
+        assertEquals(null, f.currentRow)
+        assertEquals(0, f.positionIn("continue", 6))
+        assertEquals("continue", f.rowToFocus(listOf("continue", "movies")))
     }
 }

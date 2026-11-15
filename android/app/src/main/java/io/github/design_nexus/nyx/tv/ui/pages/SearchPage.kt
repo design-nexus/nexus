@@ -98,7 +98,7 @@ class SearchPage(a: HomeActivity) : Page(a), RowHost {
         }
         bar.addView(mic, llp(a.dp(46), a.dp(46)) { marginStart = a.dp(10) })
         root.addView(bar, flp(WRAP, WRAP).apply { setMargins(a.dp(48), a.dp(80), 0, 0) })
-        hint.text = "Search your Plex library and installed apps. Press the remote mic on this screen, or choose the mic here."
+        hint.text = "Search your Plex library and installed apps. Use the mic on this screen — the remote’s Google mic opens Assistant, not Nyx Search."
         root.addView(hint, flp(a.dp(560), WRAP).apply { setMargins(a.dp(48), a.dp(140), 0, 0) })
         list.layoutManager = LinearLayoutManager(a)
         list.adapter = adapter
@@ -119,11 +119,20 @@ class SearchPage(a: HomeActivity) : Page(a), RowHost {
     fun startVoiceSearch() = voice()
 
     private fun voice() {
+        if (Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).resolveActivity(a.packageManager) == null) {
+            a.toast("No speech recognizer on this TV")
+            return
+        }
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             .putExtra(RecognizerIntent.EXTRA_PROMPT, "Search Nyx TV")
-        if (!a.startVoice(intent) { text -> field.setText(text); field.setSelection(text.length); schedule(text, now = true) }) {
-            a.toast("Voice search isn't available on this TV")
+        if (!a.startVoice(intent) { text ->
+                field.setText(text)
+                field.setSelection(text.length)
+                schedule(text, now = true)
+            }
+        ) {
+            a.toast("Voice search couldn't start")
         }
     }
 

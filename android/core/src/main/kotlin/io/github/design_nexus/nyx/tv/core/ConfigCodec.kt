@@ -93,6 +93,32 @@ object ConfigCodec {
             }
             v = 2
         }
+        if (v == 2) {
+            // Insert Playlists after Collections (or at end) when missing.
+            val rows = o.optJSONArray("rows") ?: JSONArray().also { o.put("rows", it) }
+            val has = (0 until rows.length()).any { i ->
+                rows.optJSONObject(i)?.optString("type") == "PLAYLISTS"
+            }
+            if (!has) {
+                val playlist = JSONObject()
+                    .put("id", "playlists")
+                    .put("type", "PLAYLISTS")
+                    .put("visible", true)
+                    .put("style", RowConfig.defaultStyle(RowType.PLAYLISTS).name)
+                    .put("limit", 20)
+                var insertAt = rows.length()
+                for (i in 0 until rows.length()) {
+                    if (rows.optJSONObject(i)?.optString("type") == "COLLECTIONS") {
+                        insertAt = i + 1
+                        break
+                    }
+                }
+                val list = (0 until rows.length()).mapNotNull { rows.optJSONObject(it) }.toMutableList()
+                list.add(insertAt.coerceIn(0, list.size), playlist)
+                o.put("rows", JSONArray(list))
+            }
+            v = 3
+        }
         o.put("version", v)
         return o
     }

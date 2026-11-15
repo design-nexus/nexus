@@ -112,6 +112,18 @@ class PlexServerClient(
     fun collections(library: Library, limit: Int): List<MediaItem> =
         PlexParser.items(get("/library/sections/${library.id}/collections", page(0, limit)), ref)
 
+    /** Video playlists on this server (audio playlists are skipped). */
+    fun playlists(limit: Int): List<MediaItem> =
+        PlexParser.items(
+            get("/playlists", page(0, limit) + listOf("playlistType" to "video")),
+            ref,
+        )
+
+    fun playlist(id: String): JSONObject? {
+        require(id.all(Char::isDigit))
+        return PlexParser.container(get("/playlists/$id")).optJSONArray("Metadata").objects().firstOrNull()
+    }
+
     fun metadata(id: String, includeMarkers: Boolean = false): JSONObject? {
         require(id.all(Char::isDigit))
         val q = ArrayList<Pair<String, String>>()
@@ -123,7 +135,11 @@ class PlexServerClient(
 
     fun children(item: MediaItem): List<MediaItem> {
         require(item.id.all(Char::isDigit))
-        val path = if (item.kind == MediaKind.COLLECTION) "/library/collections/${item.id}/children" else "/library/metadata/${item.id}/children"
+        val path = when (item.kind) {
+            MediaKind.COLLECTION -> "/library/collections/${item.id}/children"
+            MediaKind.PLAYLIST -> "/playlists/${item.id}/items"
+            else -> "/library/metadata/${item.id}/children"
+        }
         return PlexParser.items(get(path), ref)
     }
 
@@ -143,9 +159,17 @@ class PlexServerClient(
         get(if (watched) "/:/scrobble" else "/:/unscrobble", listOf("key" to id, "identifier" to "com.plexapp.plugins.library"))
     }
 
-    /** Artwork through the server's resizer; no token in the URL (the HTTP client adds it). */
+    /**
+     * Artwork URL with no token in the query (the HTTP client adds the header).
+     * Collection/playlist composites are served directly — `/photo/:/transcode` often
+     * returns a blank image for those paths.
+     */
     fun imageUrl(path: String, width: Int, height: Int): String? {
-        if (!PlexHttp.relativeKey(path) || !path.startsWith("/library/")) return null
+        if (!PlexHttp.relativeKey(path)) return null
+        if (!path.startsWith("/library/") && !path.startsWith("/playlists/")) return null
+        if ("/composite/" in path) {
+            return base.newBuilder().encodedPath(path).build().toString()
+        }
         return base.newBuilder().encodedPath("/photo/:/transcode")
             .addQueryParameter("url", path).addQueryParameter("width", "$width").addQueryParameter("height", "$height")
             .addQueryParameter("minSize", "1").addQueryParameter("upscale", "1").build().toString()

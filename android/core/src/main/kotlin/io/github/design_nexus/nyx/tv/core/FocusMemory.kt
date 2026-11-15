@@ -26,4 +26,10 @@ class FocusMemory {
         positions.remove(rowId)
         if (currentRow == rowId) currentRow = null
     }
+
+    /** Drop every remembered row and column (Home → top: Down should start fresh). */
+    fun clear() {
+        positions.clear()
+        currentRow = null
+    }
 }

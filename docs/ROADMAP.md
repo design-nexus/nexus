@@ -17,7 +17,7 @@ Not committed until Ken says **completed**.
 - [x] Debloat before/after PSS sample
 - [x] CI check workflow + release scaffold
 - [ ] Living Room TV (deferred)
-- [ ] Home-button cold/warm with Nyx as HOME (re-run bench after Set as home)
+- [x] Home-button cold/warm with Nyx as HOME (bench `audit/bench-20261115-112840/`)
 
 ## Later
 

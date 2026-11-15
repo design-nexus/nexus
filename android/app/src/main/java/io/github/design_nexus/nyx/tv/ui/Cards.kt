@@ -163,7 +163,8 @@ class MediaCard(ctx: Context, private val p: Palette, val style: CardStyle, priv
         val sub = when {
             isEp -> listOfNotNull(i.episodeCode, i.title).joinToString(" · ")
             i.progress > 0 -> "${formatRuntime(i.remainingMs)} left"
-            i.kind == MediaKind.COLLECTION -> i.childCount?.let { "$it titles" } ?: ""
+            i.kind == MediaKind.COLLECTION || i.kind == MediaKind.PLAYLIST ->
+                i.childCount?.let { "$it titles" } ?: ""
             else -> i.year?.toString() ?: ""
         }
         placeholderTitle.text = title

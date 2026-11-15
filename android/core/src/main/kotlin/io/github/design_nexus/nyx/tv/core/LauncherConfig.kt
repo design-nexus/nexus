@@ -1,6 +1,6 @@
 package io.github.design_nexus.nyx.tv.core
 
-enum class RowType { CONTINUE_WATCHING, FAVORITE_APPS, RECENT_MOVIES, RECENT_SHOWS, NEXT_EPISODES, COLLECTIONS, LIBRARY, GENRE }
+enum class RowType { CONTINUE_WATCHING, FAVORITE_APPS, RECENT_MOVIES, RECENT_SHOWS, NEXT_EPISODES, COLLECTIONS, PLAYLISTS, LIBRARY, GENRE }
 
 enum class CardStyle { LANDSCAPE, POSTER, SQUARE, APP_TILE }
 
@@ -81,7 +81,7 @@ data class LauncherConfig(
         copy(hiddenApps = if (hidden) hiddenApps + pkg else hiddenApps - pkg, favorites = if (hidden) favorites - pkg else favorites)
 
     companion object {
-        const val CURRENT_VERSION = 2
+        const val CURRENT_VERSION = 3
 
         fun defaultRows(): List<RowConfig> = listOf(
             RowConfig("continue", RowType.CONTINUE_WATCHING),
@@ -90,6 +90,7 @@ data class LauncherConfig(
             RowConfig("recent-shows", RowType.RECENT_SHOWS),
             RowConfig("next", RowType.NEXT_EPISODES, limit = 12),
             RowConfig("collections", RowType.COLLECTIONS),
+            RowConfig("playlists", RowType.PLAYLISTS),
         )
 
         /** Apps a new install puts in Favorites when they're installed, in this order. */

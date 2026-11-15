@@ -257,6 +257,7 @@ class PlexProvider(
         RowSource.RECENT_MOVIES -> librariesOf(MediaKind.MOVIE, query.libraryId).flatMap { l -> call { it.recentlyAdded(l, query.limit) } }.sortedByDescending { it.addedAt }.take(query.limit)
         RowSource.RECENT_SHOWS -> librariesOf(MediaKind.SHOW, query.libraryId).flatMap { l -> call { it.recentlyAdded(l, query.limit) } }.sortedByDescending { it.addedAt }.take(query.limit)
         RowSource.COLLECTIONS -> librariesOf(MediaKind.MOVIE, query.libraryId).flatMap { l -> call { it.collections(l, query.limit) } }.take(query.limit)
+        RowSource.PLAYLISTS -> call { it.playlists(query.limit) }
         RowSource.LIBRARY -> query.libraryId?.let { browse(it, SortOrder.RECENTLY_ADDED, null, 0, query.limit).items } ?: emptyList()
         RowSource.GENRE -> {
             val genre = query.genre ?: return emptyList()
@@ -279,9 +280,21 @@ class PlexProvider(
     }
 
     override suspend fun details(item: MediaItem): MediaDetails {
-        val meta = call { it.metadata(item.id) } ?: return MediaDetails(item)
-        val kids = if (item.kind == MediaKind.SHOW || item.kind == MediaKind.SEASON || item.kind == MediaKind.COLLECTION) children(item) else emptyList()
-        return PlexParser.details(meta, item.server, kids) ?: MediaDetails(item)
+        val meta = when (item.kind) {
+            MediaKind.PLAYLIST -> call { it.playlist(item.id) }
+            else -> call { it.metadata(item.id) }
+        } ?: return MediaDetails(item, children = if (item.kind == MediaKind.PLAYLIST) children(item) else emptyList())
+        val kids = if (
+            item.kind == MediaKind.SHOW ||
+            item.kind == MediaKind.SEASON ||
+            item.kind == MediaKind.COLLECTION ||
+            item.kind == MediaKind.PLAYLIST
+        ) {
+            children(item)
+        } else {
+            emptyList()
+        }
+        return PlexParser.details(meta, item.server, kids) ?: MediaDetails(item, children = kids)
     }
 
     override suspend fun children(item: MediaItem): List<MediaItem> = call { it.children(item) }

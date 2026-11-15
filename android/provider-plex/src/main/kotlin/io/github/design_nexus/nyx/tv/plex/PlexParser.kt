@@ -6,6 +6,7 @@ import io.github.design_nexus.nyx.tv.media.MediaKind
 import io.github.design_nexus.nyx.tv.media.Person
 import io.github.design_nexus.nyx.tv.media.Rating
 import io.github.design_nexus.nyx.tv.media.ServerRef
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -21,17 +22,45 @@ object PlexParser {
         "season" -> MediaKind.SEASON
         "episode" -> MediaKind.EPISODE
         "collection" -> MediaKind.COLLECTION
+        "playlist" -> MediaKind.PLAYLIST
         else -> null
+    }
+
+    /**
+     * Server-relative artwork path. Accepts relative keys, strips query/fragment, and
+     * peels absolute same-host URLs down to their path (Plex sometimes returns those).
+     */
+    fun artPath(raw: String?): String? {
+        if (raw.isNullOrBlank()) return null
+        var p = raw.trim()
+        if ("://" in p) {
+            val u = p.toHttpUrlOrNull() ?: return null
+            p = u.encodedPath
+        }
+        val cut = p.indexOfAny(charArrayOf('?', '#')).let { if (it < 0) p.length else it }
+        p = p.substring(0, cut)
+        if (!PlexHttp.relativeKey(p)) return null
+        if (!p.startsWith("/library/") && !p.startsWith("/playlists/")) return null
+        return p
     }
 
     fun item(v: JSONObject, server: ServerRef): MediaItem? {
         val kind = kind(v.optString("type")) ?: return null
         val id = key(v, "ratingKey") ?: return null
-        fun art(field: String): String? = v.optString(field).takeIf { PlexHttp.relativeKey(it) && it.startsWith("/library/") }
+        fun art(field: String): String? = artPath(v.optString(field).ifEmpty { null })
         val leaf = v.optInt("leafCount", -1)
         val viewed = v.optInt("viewedLeafCount", -1)
         val episode = kind == MediaKind.EPISODE
         val season = kind == MediaKind.SEASON
+        val stamp = v.optLong("updatedAt", 0).takeIf { it > 0 }
+            ?: v.optLong("addedAt", 0).takeIf { it > 0 }
+            ?: 1L
+        val cover = imageCover(v)
+        val composite = when (kind) {
+            MediaKind.COLLECTION -> "/library/collections/$id/composite/$stamp"
+            MediaKind.PLAYLIST -> "/playlists/$id/composite/$stamp"
+            else -> null
+        }
         return MediaItem(
             server = server,
             id = id,
@@ -53,6 +82,8 @@ object PlexParser {
                 MediaKind.SHOW -> v.optInt("childCount", -1).takeIf { it >= 0 }
                 MediaKind.SEASON -> leaf.takeIf { it >= 0 }
                 MediaKind.COLLECTION -> v.optInt("childCount", -1).takeIf { it >= 0 }
+                MediaKind.PLAYLIST -> leaf.takeIf { it >= 0 }
+                    ?: v.optInt("childCount", -1).takeIf { it >= 0 }
                 else -> null
             },
             seriesTitle = when {
@@ -70,7 +101,9 @@ object PlexParser {
             seriesId = if (episode) key(v, "grandparentRatingKey") else if (season) key(v, "parentRatingKey") else null,
             poster = when {
                 episode -> art("grandparentThumb") ?: art("parentThumb")
-                else -> art("thumb")
+                kind == MediaKind.COLLECTION || kind == MediaKind.PLAYLIST ->
+                    art("thumb") ?: cover ?: composite
+                else -> art("thumb") ?: cover
             },
             backdrop = when {
                 episode -> art("grandparentArt") ?: art("art")
@@ -82,6 +115,16 @@ object PlexParser {
             addedAt = v.optLong("addedAt", 0),
             libraryId = key(v, "librarySectionID"),
         )
+    }
+
+    /** Newer PMS payloads put posters in `Image[]` (`coverPoster`) instead of `thumb`. */
+    private fun imageCover(v: JSONObject): String? {
+        for (img in v.optJSONArray("Image").objects()) {
+            val type = img.optString("type")
+            if (type != "coverPoster" && type != "poster") continue
+            artPath(img.optString("url").ifEmpty { null })?.let { return it }
+        }
+        return null
     }
 
     fun details(v: JSONObject, server: ServerRef, children: List<MediaItem>): MediaDetails? {

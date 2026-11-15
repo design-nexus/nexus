@@ -28,8 +28,10 @@ import coil3.request.ImageRequest
 import coil3.request.target
 import io.github.design_nexus.nyx.tv.NyxTvApp
 import io.github.design_nexus.nyx.tv.R
+import io.github.design_nexus.nyx.tv.core.AmbientSource
 import io.github.design_nexus.nyx.tv.core.LauncherConfig
 import io.github.design_nexus.nyx.tv.data.AppEntry
+import io.github.design_nexus.nyx.tv.device.TvSystem
 import io.github.design_nexus.nyx.tv.media.MediaItem
 import io.github.design_nexus.nyx.tv.media.PlaybackOutcome
 import io.github.design_nexus.nyx.tv.media.ProviderStatus
@@ -126,7 +128,10 @@ class HomeActivity : Activity() {
             build()
             showRoot("home", focus = true)
             reloadApps()
-            root.post { logStartup() }
+            root.post {
+                logStartup()
+                handleLaunchExtras(intent)
+            }
             launch { app.config.config.collectLatest { onConfig(it) } }
         }
     }
@@ -377,13 +382,14 @@ class HomeActivity : Activity() {
     }
 
     fun startSearchVoice() {
+        closeOverlay()
         val page = stack.lastOrNull()
-        if (page is io.github.design_nexus.nyx.tv.ui.pages.SearchPage) {
+        if (page is SearchPage) {
             page.startVoiceSearch()
         } else {
             showRoot("search", focus = true)
             pageHost.post {
-                (stack.lastOrNull() as? io.github.design_nexus.nyx.tv.ui.pages.SearchPage)?.startVoiceSearch()
+                (stack.lastOrNull() as? SearchPage)?.startVoiceSearch()
             }
         }
     }
@@ -432,14 +438,48 @@ class HomeActivity : Activity() {
         overlayReturn = null
     }
 
-    fun openQuickSettings() = openOverlay(QuickSettings(this).also { it.post { it.focusFirst() } })
+    fun openQuickSettings() {
+        if (overlay is QuickSettings) {
+            closeOverlay()
+            return
+        }
+        openOverlay(QuickSettings(this).also { it.post { it.focusFirst() } })
+    }
 
-    fun startAmbient() {
+    /** HDMI input picker (remote Input key and Quick Settings tile). */
+    fun openInputs() {
+        val tv = TvSystem(this)
+        val list = tv.inputs().filter { it.passthrough }
+        if (list.isEmpty()) {
+            closeOverlay()
+            if (!tv.open(TvSystem.Screen.ALL)) toast("This TV doesn't list its HDMI inputs to apps")
+            return
+        }
+        showMenu(
+            "Inputs",
+            "HDMI inputs",
+            list.map { i ->
+                MenuPanel.Item(i.label, "HDMI") {
+                    if (!tv.switchTo(i)) toast("${i.label} couldn't be opened")
+                }
+            },
+        )
+    }
+
+    fun startAmbient(source: AmbientSource = config.ambient.source) {
         if (ambient != null) return
-        val v = AmbientView(this, palette, config.ambient.source, config.ambient.showClock, config.clock24h)
+        val v = AmbientView(this, palette, source, config.ambient.showClock, config.clock24h)
         ambient = v
         root.addView(v, flp(MATCH, MATCH))
         v.start(app.cache, app.plex, app.images)
+    }
+
+    /** Sleep-timer expiry: black Ambient (not real TV standby). */
+    fun startSleepAmbient() {
+        closeOverlay()
+        stopAmbient()
+        startAmbient(AmbientSource.BLACK)
+        toast("Sleep timer — Ambient on. Press any key to wake.")
     }
 
     private fun stopAmbient(): Boolean {
@@ -466,6 +506,14 @@ class HomeActivity : Activity() {
         }
         if (event.action == KeyEvent.ACTION_DOWN) {
             when (event.keyCode) {
+                // SETTINGS is often stolen by the framework; on TCL the gear arrives as NOTIFICATION.
+                KeyEvent.KEYCODE_SETTINGS, KeyEvent.KEYCODE_NOTIFICATION -> {
+                    openQuickSettings(); return true
+                }
+                KeyEvent.KEYCODE_TV_INPUT, KeyEvent.KEYCODE_WINDOW -> {
+                    openInputs(); return true
+                }
+                // Usually swallowed by Google Assistant; kept as a harmless fallback.
                 KeyEvent.KEYCODE_VOICE_ASSIST -> {
                     startSearchVoice(); return true
                 }
@@ -491,10 +539,37 @@ class HomeActivity : Activity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         if (!::root.isInitialized) return
         stopAmbient()
         closeOverlay()
-        if (intent.hasCategory(Intent.CATEGORY_HOME)) showRoot("home", focus = true)
+        if (intent.hasCategory(Intent.CATEGORY_HOME) &&
+            !intent.getBooleanExtra(EXTRA_OPEN_INPUTS, false) &&
+            !intent.getBooleanExtra(EXTRA_OPEN_QUICK_SETTINGS, false)
+        ) {
+            showRoot("home", focus = true)
+        }
+        handleLaunchExtras(intent)
+    }
+
+    private fun handleLaunchExtras(intent: Intent?) {
+        if (intent == null || !::root.isInitialized) return
+        when {
+            intent.getBooleanExtra(EXTRA_OPEN_INPUTS, false) -> {
+                intent.removeExtra(EXTRA_OPEN_INPUTS)
+                pageHost.post { openInputs() }
+            }
+            intent.getBooleanExtra(EXTRA_OPEN_QUICK_SETTINGS, false) ||
+                intent.action == ACTION_TOGGLE_NOTIFICATION_PANEL ||
+                intent.action == ACTION_OPEN_NOTIFICATION_PANEL -> {
+                intent.removeExtra(EXTRA_OPEN_QUICK_SETTINGS)
+                // Consumed so a later HOME onNewIntent doesn't reopen the panel.
+                if (intent.action == ACTION_TOGGLE_NOTIFICATION_PANEL || intent.action == ACTION_OPEN_NOTIFICATION_PANEL) {
+                    intent.action = Intent.ACTION_MAIN
+                }
+                pageHost.post { openQuickSettings() }
+            }
+        }
     }
 
     // ---------- Lifecycle ----------
@@ -538,8 +613,12 @@ class HomeActivity : Activity() {
         scope.cancel()
     }
 
-    private companion object {
+    companion object {
         const val VOICE = 41
+        const val EXTRA_OPEN_INPUTS = "io.github.design_nexus.nyx.tv.OPEN_INPUTS"
+        const val EXTRA_OPEN_QUICK_SETTINGS = "io.github.design_nexus.nyx.tv.OPEN_QUICK_SETTINGS"
+        const val ACTION_TOGGLE_NOTIFICATION_PANEL = "android.app.action.TOGGLE_NOTIFICATION_HANDLER_PANEL"
+        const val ACTION_OPEN_NOTIFICATION_PANEL = "android.app.action.OPEN_NOTIFICATION_HANDLER_PANEL"
     }
 
     private fun updateClock() {

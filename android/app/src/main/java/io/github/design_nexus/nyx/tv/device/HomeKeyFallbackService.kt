@@ -1,28 +1,59 @@
 package io.github.design_nexus.nyx.tv.device
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
 import android.content.Intent
+import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import io.github.design_nexus.nyx.tv.data.AppRepository
 import io.github.design_nexus.nyx.tv.ui.HomeActivity
 
 /**
- * Optional helper for TVs that still open the stock home app after Nyx TV is set as HOME.
- * When enabled in system Accessibility settings, bringing launcherx / setupwraith to the
- * foreground reopens Nyx TV. Off by default; never auto-enables itself.
+ * Optional Accessibility helper.
+ *
+ * - While enabled: try to remap Settings/gear (`KEYCODE_NOTIFICATION` /
+ *   `KEYCODE_SETTINGS`) to Nyx Quick Settings. On some TVs SystemUI handles the gear
+ *   before Accessibility (Google TV `TvNotificationPanel` → launcherx), so the nav
+ *   gear remains the reliable path there.
+ * - When [PREF_ENABLED]: bringing launcherx / setupwraith to the foreground reopens Nyx.
  */
 class HomeKeyFallbackService : AccessibilityService() {
+    override fun onServiceConnected() {
+        serviceInfo = serviceInfo.apply {
+            flags = flags or AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
+            eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        }
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         if (!prefs().getBoolean(PREF_ENABLED, false)) return
         val pkg = event.packageName?.toString() ?: return
         if (pkg == packageName || pkg !in STOCK_HOME) return
-        // If Nyx is already the role holder, still bounce away from stock chrome that stole Home.
         val i = Intent(this, HomeActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
             .addCategory(Intent.CATEGORY_HOME)
         startActivity(i)
+    }
+
+    override fun onKeyEvent(event: KeyEvent): Boolean {
+        if (event.action != KeyEvent.ACTION_DOWN) return false
+        when (event.keyCode) {
+            KeyEvent.KEYCODE_NOTIFICATION, KeyEvent.KEYCODE_SETTINGS -> {
+                startActivity(
+                    Intent(this, HomeActivity::class.java)
+                        .addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK or
+                                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                                Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                        )
+                        .putExtra(HomeActivity.EXTRA_OPEN_QUICK_SETTINGS, true),
+                )
+                return true
+            }
+        }
+        return false
     }
 
     override fun onInterrupt() {}

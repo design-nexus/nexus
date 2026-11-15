@@ -23,6 +23,7 @@ class HomeRepository(private val provider: MediaProvider, private val cache: Met
         RowType.RECENT_MOVIES -> RowSource.RECENT_MOVIES
         RowType.RECENT_SHOWS -> RowSource.RECENT_SHOWS
         RowType.COLLECTIONS -> RowSource.COLLECTIONS
+        RowType.PLAYLISTS -> RowSource.PLAYLISTS
         RowType.LIBRARY -> RowSource.LIBRARY
         RowType.GENRE -> RowSource.GENRE
         RowType.FAVORITE_APPS -> null

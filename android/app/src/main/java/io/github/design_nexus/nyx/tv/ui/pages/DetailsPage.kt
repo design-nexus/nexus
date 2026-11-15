@@ -118,6 +118,7 @@ class DetailsPage(a: HomeActivity, private var item: MediaItem) : Page(a), RowHo
             i.tagline.isNotBlank() -> i.tagline.uppercase()
             i.kind == MediaKind.SHOW -> i.childCount?.let { "$it SEASONS" } ?: "TV SHOW"
             i.kind == MediaKind.COLLECTION -> "COLLECTION"
+            i.kind == MediaKind.PLAYLIST -> i.childCount?.let { "$it TITLES" } ?: "PLAYLIST"
             else -> "MOVIE"
         }
         title.text = i.title
@@ -164,8 +165,12 @@ class DetailsPage(a: HomeActivity, private var item: MediaItem) : Page(a), RowHo
                 add(PillButton(a, palette, label, R.drawable.ic_play, primary = true, reduceMotion = reduceMotion)) { t?.let { a.play(it) } ?: a.toast("Loading episodes…") }
                 add(PillButton(a, palette, if (i.watched) "Mark unwatched" else "Mark watched", R.drawable.ic_check, reduceMotion = reduceMotion)) { toggleWatched() }
             }
-            MediaKind.COLLECTION -> add(PillButton(a, palette, "Play", R.drawable.ic_play, primary = true, reduceMotion = reduceMotion)) {
-                details?.children?.firstOrNull()?.let { a.play(it) }
+            MediaKind.COLLECTION, MediaKind.PLAYLIST -> add(
+                PillButton(a, palette, "Play", R.drawable.ic_play, primary = true, reduceMotion = reduceMotion),
+            ) {
+                details?.children?.firstOrNull { it.kind == MediaKind.MOVIE || it.kind == MediaKind.EPISODE }
+                    ?.let { a.play(it) }
+                    ?: a.toast("Nothing playable in this list yet")
             }
         }
         if (hadFocus) buttons.getChildAt(0)?.requestFocus()
@@ -196,8 +201,15 @@ class DetailsPage(a: HomeActivity, private var item: MediaItem) : Page(a), RowHo
             when (item.kind) {
                 MediaKind.SHOW -> { seasonItems = d.children.filter { it.kind == MediaKind.SEASON }; buildSeasons(); pickSeason() }
                 MediaKind.SEASON -> { seasonItems = listOf(item); currentSeason = item; loadEpisodes(item) }
-                MediaKind.COLLECTION -> adapter.submit(listOf(RowData("children", "In this collection", CardStyle.POSTER, d.children.map { Cell.Media(it) })))
-                else -> if (d.related.isNotEmpty()) adapter.submit(listOf(RowData("related", "More like this", CardStyle.POSTER, d.related.map { Cell.Media(it) })))
+                MediaKind.COLLECTION -> adapter.submit(
+                    listOf(RowData("children", "In this collection", CardStyle.POSTER, d.children.map { Cell.Media(it) })),
+                )
+                MediaKind.PLAYLIST -> adapter.submit(
+                    listOf(RowData("children", "In this playlist", CardStyle.POSTER, d.children.map { Cell.Media(it) })),
+                )
+                else -> if (d.related.isNotEmpty()) {
+                    adapter.submit(listOf(RowData("related", "More like this", CardStyle.POSTER, d.related.map { Cell.Media(it) })))
+                }
             }
             render()
         }

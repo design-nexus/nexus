@@ -1,6 +1,6 @@
 package io.github.design_nexus.nyx.tv.media
 
-enum class MediaKind { MOVIE, SHOW, SEASON, EPISODE, COLLECTION }
+enum class MediaKind { MOVIE, SHOW, SEASON, EPISODE, COLLECTION, PLAYLIST }
 
 /** A server of one provider: Plex's machine identifier, for example. */
 data class ServerRef(val provider: String, val id: String)
@@ -67,7 +67,7 @@ data class MediaDetails(
 
 data class Library(val server: ServerRef, val id: String, val title: String, val kind: MediaKind)
 
-enum class RowSource { CONTINUE_WATCHING, NEXT_EPISODES, RECENT_MOVIES, RECENT_SHOWS, COLLECTIONS, LIBRARY, GENRE }
+enum class RowSource { CONTINUE_WATCHING, NEXT_EPISODES, RECENT_MOVIES, RECENT_SHOWS, COLLECTIONS, PLAYLISTS, LIBRARY, GENRE }
 
 data class RowQuery(
     val source: RowSource,

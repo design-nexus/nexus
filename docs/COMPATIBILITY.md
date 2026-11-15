@@ -20,7 +20,7 @@ Tested with `scripts/launcher.sh`, snapshot `audit/snapshot-Smart_TV-20261114-14
 
 `scripts/launcher.sh disable-stock` now disables setupwraith when present; `restore` re-enables it from the snapshot. Nothing is uninstalled.
 
-Optional **Nyx TV Home helper** (AccessibilityService): Settings → TV and inputs. Off by default. When enabled in system Accessibility, it reopens Nyx TV if launcherx or setupwraith comes to the foreground. Use only when Home still opens stock chrome after `set-home` / `disable-stock`.
+Optional **Nyx TV remote helper** (AccessibilityService): Settings → TV and inputs. Off by default. Remaps Settings/gear when the key reaches Accessibility; optionally reopens Nyx if launcherx/setupwraith steals Home. On Bedroom the physical gear is eaten by SystemUI before Accessibility — use the nav gear.
 
 ### Plex deep links (same day)
 
@@ -28,11 +28,16 @@ Leanback launch and `plex://` VIEW intents open `tv.plex.app.MainActivity` (stat
 
 ### Phase 5 checks (2026-11-15)
 
-Observed on Bedroom with Google TV still as HOME (Nyx installed). Living Room not tested.
+Nyx set as HOME on Bedroom (snapshot `audit/snapshot-Smart_TV-20261115-112717.env`; verify passed). Living Room not tested.
 
 | Check | Result | Notes |
 |-------|--------|-------|
-| Standby / wake → Nyx | **Unverified** | Needs Nyx as HOME + manual sleep/wake |
+| Home → Nyx (as HOME) | **Observed** | After `set-home` + `disable-stock` (launcherx + setupwraith); Settings/Play Store still open; Home returns to Nyx |
+| Remote Settings key | **Nav gear** | Physical gear is `KEYCODE_NOTIFICATION` → SystemUI `TvNotificationPanel` with `config_notificationHandlerPackage` = launcherx (`DashboardHandler`). With launcherx disabled-user that resolve fails (key does nothing; many presses can still hit Realtek product info). Policy handles the key before Accessibility, so the remote helper cannot steal it on Bedroom. **Nav gear** opens Quick Settings. HomeActivity still handles `TOGGLE_NOTIFICATION_HANDLER_PANEL` / `KEYCODE_NOTIFICATION` when delivered. A later Manager option may keep launcherx’s dashboard handler without its Home activity. |
+| Remote Input key | **Wired** | `KEYCODE_TV_INPUT` while Nyx is focused opens our Inputs menu (duplicate labels collapsed). Firmware `VIEW_INPUTS` is handled by TCL Quick Panel (`com.tcl.suspension`); we do not claim that intent (avoids a chooser) |
+| Remote mic → Nyx Search | **No** | System Assist key opens Google Assistant; Nyx voice search is the Search-screen mic |
+| Sleep timer (Nyx) | **In-app** | Quick Settings: 30/60/90/120 → Ambient black. Real standby needs privileged APIs; Google TV launcherx sleep timer is unavailable while launcherx is disabled. Tile can deep-link Power/Display settings when present |
+| Standby / wake → Nyx | **Unverified** | Needs a manual sleep/wake with Nyx left as HOME |
 | Chromecast / mediashell installed | **Observed** | `com.google.android.apps.mediashell` present (incl. cast_browser splits). Cast *while Nyx is HOME* not re-tested this session |
 | HDMI / TV inputs | **Observed** | `dumpsys tv_input` lists TCL passthrough HDMI ids + `TDTVInputService`; several ports state 0/1 |
 | CEC | **Observed** | `dumpsys hdmi_control`: CEC enabled, display_name `Bedroom TV`, 4 HDMI_IN ports with cec:true. Power/input routing with Nyx as HOME **unverified** |

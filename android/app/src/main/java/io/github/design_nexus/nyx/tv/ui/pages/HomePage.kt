@@ -151,7 +151,7 @@ class HomePage(a: HomeActivity) : Page(a), RowHost {
         }
         infoBtn.setOnClickListener { featured?.let(a::openDetails) }
         val toRows = View.OnKeyListener { _, code, e ->
-            if (code == KeyEvent.KEYCODE_DPAD_DOWN && e.action == KeyEvent.ACTION_DOWN) { focusRows(); true }
+            if (code == KeyEvent.KEYCODE_DPAD_DOWN && e.action == KeyEvent.ACTION_DOWN) { focusFirstRow(); true }
             else if (code == KeyEvent.KEYCODE_DPAD_UP && e.action == KeyEvent.ACTION_DOWN) { a.focusNav(); true } else false
         }
         playBtn.setOnKeyListener(toRows)
@@ -181,9 +181,18 @@ class HomePage(a: HomeActivity) : Page(a), RowHost {
         }
     }
 
+    /** Down from the hero: first row, first cell — not the pre-Home focus. */
+    private fun focusFirstRow() {
+        if (adapter.rows.isEmpty()) return
+        val lm = list.layoutManager as LinearLayoutManager
+        lm.scrollToPositionWithOffset(0, 0)
+        list.post { (lm.findViewByPosition(0) as? RowView)?.focusFirst() }
+    }
+
     private fun enterHero() {
         if (!showingHero()) return
         heroMode = true
+        focus.clear()
         list.scrollToPosition(0)
         moveRows(HERO_SHIFT)
         showInfo(featured, hero = true)
@@ -202,6 +211,7 @@ class HomePage(a: HomeActivity) : Page(a), RowHost {
         info.removeView(ratings)
         if (unconfigured && hero) {
             eyebrow.text = "PLEX"
+            eyebrow.visibility = View.VISIBLE
             title.text = "Your library, front and centre"
             meta.text = "Sign in to see Continue Watching, new movies and shows here"
             summary.text = "Nyx TV works without Plex too: your apps are below."
@@ -213,20 +223,52 @@ class HomePage(a: HomeActivity) : Page(a), RowHost {
         }
         infoBtn.visibility = View.VISIBLE
         if (item == null) {
-            eyebrow.text = ""; title.text = ""; meta.text = ""; summary.text = ""
+            eyebrow.text = ""; eyebrow.visibility = View.GONE
+            title.text = ""; meta.text = ""; summary.text = ""
             ratings = hlinear(a)
             info.addView(ratings, 3)
             return
         }
-        eyebrow.text = if (hero) (if (item.kind == MediaKind.SHOW) "NEW IN TV SHOWS" else "NEW IN MOVIES") else ""
-        eyebrow.visibility = if (hero) View.VISIBLE else View.GONE
+        val listKind = item.kind == MediaKind.COLLECTION || item.kind == MediaKind.PLAYLIST
+        eyebrow.text = when {
+            listKind && item.kind == MediaKind.COLLECTION -> "COLLECTION"
+            listKind && item.kind == MediaKind.PLAYLIST -> "PLAYLIST"
+            hero && item.kind == MediaKind.SHOW -> "NEW IN TV SHOWS"
+            hero -> "NEW IN MOVIES"
+            else -> ""
+        }
+        eyebrow.visibility = if (eyebrow.text.isNotEmpty()) View.VISIBLE else View.GONE
         title.text = if (item.kind == MediaKind.EPISODE) item.seriesTitle ?: item.title else item.title
-        val left = if (item.progress > 0) "${formatRuntime(item.remainingMs)} left" else null
-        meta.text = listOfNotNull(metaLine(item).ifEmpty { null }, left).joinToString("  ·  ")
-        ratings = if (hero) ratingChips(a, item) else hlinear(a)
+        meta.text = when {
+            listKind -> item.childCount?.let { "$it titles" }.orEmpty()
+            else -> {
+                val left = if (item.progress > 0) "${formatRuntime(item.remainingMs)} left" else null
+                listOfNotNull(metaLine(item).ifEmpty { null }, left).joinToString("  ·  ")
+            }
+        }
+        ratings = if (hero && !listKind) ratingChips(a, item) else hlinear(a)
         info.addView(ratings, 3)
         summary.text = item.summary
         playBtn.setText(if (item.progress > 0) "Resume" else "Play")
+    }
+
+    /** App identity in the strip — name/meta only; OK opens the app, no Open CTA. */
+    private fun showAppStrip(entry: AppEntry) {
+        buttons.visibility = View.GONE
+        title.textSize = 30f
+        summary.maxLines = 2
+        info.removeView(ratings)
+        ratings = hlinear(a)
+        info.addView(ratings, 3)
+        eyebrow.text = "APP"
+        eyebrow.visibility = View.VISIBLE
+        title.text = entry.label
+        val ver = a.app.apps.versionName(entry.pkg)
+        meta.text = listOfNotNull(
+            if (entry.tv) "Android TV app" else "App",
+            ver?.let { "Version $it" },
+        ).joinToString("  ·  ")
+        summary.text = if (entry.system) "System app on this TV." else "Installed on this TV. Press OK to open."
     }
 
     // ---------- RowHost ----------
@@ -240,11 +282,21 @@ class HomePage(a: HomeActivity) : Page(a), RowHost {
                 }
                 handler.removeCallbacksAndMessages(null)
                 showInfo(cell.item, hero = false)
-                handler.postDelayed({ a.setBackdrop(cell.item.backdrop ?: featured?.backdrop) }, 250)
+                // Collections/playlists: keep the last title backdrop — composite/poster
+                // as a 1280 backdrop thrashing decode was the Home lag.
+                val listKind = cell.item.kind == MediaKind.COLLECTION || cell.item.kind == MediaKind.PLAYLIST
+                if (!listKind) {
+                    handler.postDelayed({ a.setBackdrop(cell.item.backdrop ?: featured?.backdrop) }, 250)
+                }
             }
             is Cell.App -> {
-                // Keep featured strip, HERO_SHIFT, and backdrop — apps must not slam the hero.
+                if (heroMode) {
+                    heroMode = false
+                    moveRows(0)
+                }
                 handler.removeCallbacksAndMessages(null)
+                showAppStrip(cell.entry)
+                // Hold the last title backdrop — apps have no art for Home.
             }
         }
     }
@@ -364,6 +416,7 @@ class HomePage(a: HomeActivity) : Page(a), RowHost {
         RowType.RECENT_SHOWS -> "Recently Added TV Shows"
         RowType.NEXT_EPISODES -> "Next Episodes"
         RowType.COLLECTIONS -> "Collections"
+        RowType.PLAYLISTS -> "Playlists"
         RowType.LIBRARY -> "Library"
         RowType.GENRE -> r.genre ?: "Genre"
     }

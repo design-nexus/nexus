@@ -1012,6 +1012,26 @@ class PlayerActivity : Activity() {
         if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
         val key = event.keyCode
 
+        // Launcher remote keys: leave playback and open Home overlays.
+        when (key) {
+            KeyEvent.KEYCODE_SETTINGS, KeyEvent.KEYCODE_NOTIFICATION -> {
+                startActivity(
+                    android.content.Intent(this, io.github.design_nexus.nyx.tv.ui.HomeActivity::class.java)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        .putExtra(io.github.design_nexus.nyx.tv.ui.HomeActivity.EXTRA_OPEN_QUICK_SETTINGS, true),
+                )
+                return true
+            }
+            KeyEvent.KEYCODE_TV_INPUT, KeyEvent.KEYCODE_WINDOW -> {
+                startActivity(
+                    android.content.Intent(this, io.github.design_nexus.nyx.tv.ui.HomeActivity::class.java)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        .putExtra(io.github.design_nexus.nyx.tv.ui.HomeActivity.EXTRA_OPEN_INPUTS, true),
+                )
+                return true
+            }
+        }
+
         if (menuOpen) {
             when (menuKind) {
                 Menu.SETTINGS -> if (handleSettingsKeys(key)) return true

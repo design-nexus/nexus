@@ -67,6 +67,15 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- TCL gear → TvNotificationPanel; without a handler the key does nothing. -->
+            <intent-filter>
+                <action android:name="android.app.action.TOGGLE_NOTIFICATION_HANDLER_PANEL" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.app.action.OPEN_NOTIFICATION_HANDLER_PANEL" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
         <activity
@@ -110,5 +119,6 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_fallback" />
         </service>
+
     </application>
 </manifest>

@@ -50,7 +50,7 @@ class PlexParserTest {
     @Test fun showCountsRatingsAndUnsafeArt() {
         val v = JSONObject(
             """{"type":"show","ratingKey":76805,"title":"Altered Carbon","leafCount":18,"viewedLeafCount":4,"childCount":2,
-               "thumb":"https://evil.example/x.jpg","art":"/library/metadata/76805/art/1?x=1","Genre":[{"tag":"Drama"}],
+               "thumb":"https://evil.example/x.jpg","art":"https://evil.example/art.jpg","Genre":[{"tag":"Drama"}],
                "Rating":[{"image":"rottentomatoes://image.rating.ripe","value":7.5,"type":"critic"},{"image":"rottentomatoes://image.rating.upright","value":6.4,"type":"audience"}]}"""
         )
         val i = PlexParser.item(v, S)!!
@@ -60,6 +60,50 @@ class PlexParserTest {
         assertNull(i.backdrop)
         assertEquals(listOf("Drama"), i.genres)
         assertEquals(listOf("rt_critic" to 75, "rt_audience" to 64), i.ratings.map { it.source to it.percent })
+    }
+
+    @Test fun collectionPosterFromThumbQueryAndCompositeFallback() {
+        val withQuery = JSONObject(
+            """{"type":"collection","ratingKey":"42","title":"Star Wars","childCount":9,
+               "thumb":"/library/collections/42/composite/1700000000?x=1","updatedAt":1700000000}""",
+        )
+        val a = PlexParser.item(withQuery, S)!!
+        assertEquals(MediaKind.COLLECTION, a.kind)
+        assertEquals("/library/collections/42/composite/1700000000", a.poster)
+        assertEquals(9, a.childCount)
+
+        val fromImage = JSONObject(
+            """{"type":"collection","ratingKey":"7","title":"Bond","updatedAt":99,
+               "Image":[{"type":"coverPoster","url":"/library/collections/7/composite/99"}]}""",
+        )
+        assertEquals("/library/collections/7/composite/99", PlexParser.item(fromImage, S)!!.poster)
+
+        val synthesized = JSONObject(
+            """{"type":"collection","ratingKey":"3","title":"Empty","updatedAt":55}""",
+        )
+        assertEquals("/library/collections/3/composite/55", PlexParser.item(synthesized, S)!!.poster)
+
+        val playlist = JSONObject(
+            """{"type":"playlist","ratingKey":"8","title":"Friday","leafCount":4,
+               "thumb":"/playlists/8/composite/11"}""",
+        )
+        val p = PlexParser.item(playlist, S)!!
+        assertEquals(MediaKind.PLAYLIST, p.kind)
+        assertEquals("/playlists/8/composite/11", p.poster)
+        assertEquals(4, p.childCount)
+    }
+
+    @Test fun artPathStripsQueryAndAbsoluteLocal() {
+        assertEquals(
+            "/library/collections/1/composite/2",
+            PlexParser.artPath("/library/collections/1/composite/2?X-Plex-Token=nope"),
+        )
+        assertEquals(
+            "/library/metadata/1/thumb/2",
+            PlexParser.artPath("http://192.168.1.4:32400/library/metadata/1/thumb/2"),
+        )
+        assertNull(PlexParser.artPath("https://evil.example/x.jpg"))
+        assertNull(PlexParser.artPath("//evil/x"))
     }
 
     @Test fun rejectsUnknownAndBadKeys() {
@@ -161,6 +205,9 @@ class PlexProviderTest {
         assertEquals("srv", p.tokenFor(server.url("/photo/:/transcode")))
         assertNull(p.tokenFor(okhttp3.HttpUrl.Builder().scheme("http").host("other.example").build()))
         assertTrue(seen.none { it.url.toString().contains("srv") })
+        val composite = p.imageUrl("/library/collections/42/composite/9", 300, 450)!!
+        assertFalse(composite.contains("/photo/:/transcode"))
+        assertTrue(composite.contains("/library/collections/42/composite/9"))
     }
 
     @Test fun wrongServerIdentityIsRejected() = runBlocking {

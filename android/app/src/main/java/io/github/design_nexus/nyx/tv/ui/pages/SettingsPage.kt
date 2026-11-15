@@ -310,6 +310,7 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
         RowType.RECENT_SHOWS -> "Recently Added TV Shows"
         RowType.NEXT_EPISODES -> "Next Episodes"
         RowType.COLLECTIONS -> "Collections"
+        RowType.PLAYLISTS -> "Playlists"
         RowType.LIBRARY -> "Library"
         RowType.GENRE -> r.genre ?: "Genre"
     }
@@ -383,8 +384,21 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
         a.scope.launch {
             val c = a.config
             val items = ArrayList<MenuPanel.Item>()
-            for (t in listOf(RowType.CONTINUE_WATCHING, RowType.FAVORITE_APPS, RowType.RECENT_MOVIES, RowType.RECENT_SHOWS, RowType.NEXT_EPISODES, RowType.COLLECTIONS))
-                if (c.rows.none { it.type == t }) items += MenuPanel.Item(rowTitle(RowConfig("", t))) { addRow(RowConfig(t.name.lowercase(), t)) }
+            for (t in listOf(
+                RowType.CONTINUE_WATCHING,
+                RowType.FAVORITE_APPS,
+                RowType.RECENT_MOVIES,
+                RowType.RECENT_SHOWS,
+                RowType.NEXT_EPISODES,
+                RowType.COLLECTIONS,
+                RowType.PLAYLISTS,
+            )) {
+                if (c.rows.none { it.type == t }) {
+                    items += MenuPanel.Item(rowTitle(RowConfig("", t))) {
+                        addRow(RowConfig(t.name.lowercase(), t))
+                    }
+                }
+            }
             val libs: List<Library> = runCatching { a.app.plex.libraries() }.getOrDefault(emptyList())
             for (l in libs) items += MenuPanel.Item("Library: ${l.title}") { addRow(RowConfig("lib-${l.id}-${System.currentTimeMillis()}", RowType.LIBRARY, title = l.title, libraryId = l.id)) }
             libs.firstOrNull { it.kind == MediaKind.MOVIE }?.let { l ->
@@ -904,9 +918,24 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
         // Picture / Date are noisy on TCL and rarely useful from the launcher.
         for ((label, screen) in listOf("Network" to TvSystem.Screen.WIFI, "Bluetooth" to TvSystem.Screen.BLUETOOTH, "Sound" to TvSystem.Screen.SOUND, "All TV settings" to TvSystem.Screen.ALL))
             if (tv.canOpen(screen)) action(label) { tv.open(screen) }
-        group("Home helper")
-        val wants = HomeKeyFallbackService.userWantsFallback(a)
+        group("Remote helper")
         val serviceOn = HomeKeyFallbackService.isServiceEnabled(a)
+        action(
+            "Settings/gear → Quick Settings",
+            "Enable “Nyx TV remote helper” in Accessibility. On some Google TVs SystemUI still eats the gear; the nav gear always opens Quick Settings.",
+            if (serviceOn) "On" else "Off",
+        ) {
+            if (!serviceOn) {
+                a.toast("Enable “Nyx TV remote helper” in Accessibility")
+                HomeKeyFallbackService.openAccessibilitySettings(a)
+            } else {
+                HomeKeyFallbackService.openAccessibilitySettings(a)
+            }
+        }
+        if (!serviceOn) action("Open Accessibility settings", "Enable Nyx TV remote helper") {
+            HomeKeyFallbackService.openAccessibilitySettings(a)
+        }
+        val wants = HomeKeyFallbackService.userWantsFallback(a)
         val helperValue = when {
             wants && serviceOn -> "On"
             wants && !serviceOn -> "Allowed here · turn on in Accessibility"
@@ -914,22 +943,19 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
         }
         action(
             "Bring Nyx TV back if stock Home opens",
-            "For TVs that still open Google TV home after Nyx is set as Home. Off by default.",
+            "Same Accessibility service. Off by default; only needed if Home still opens Google TV.",
             helperValue,
         ) {
             if (!wants) {
                 HomeKeyFallbackService.setUserWantsFallback(a, true)
                 if (!serviceOn) {
-                    a.toast("Enable “Nyx TV Home helper” in Accessibility")
+                    a.toast("Enable “Nyx TV remote helper” in Accessibility")
                     HomeKeyFallbackService.openAccessibilitySettings(a)
                 }
             } else {
                 HomeKeyFallbackService.setUserWantsFallback(a, false)
             }
             renderBody(keepFocus = true)
-        }
-        if (wants && !serviceOn) action("Open Accessibility settings", "Enable Nyx TV Home helper there") {
-            HomeKeyFallbackService.openAccessibilitySettings(a)
         }
     }
 
@@ -940,7 +966,7 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
         action("Nyx TV ${BuildConfig.VERSION_NAME}", "Build ${BuildConfig.VERSION_CODE}${if (BuildConfig.DEBUG) " · debug" else ""}") {}
         val homeLine = when {
             AppRepository.isHomeDefault(a) -> "Nyx TV is the TV's home app"
-            HomeKeyFallbackService.needed(a) -> "Another app is home — use launcher scripts or the Home helper under TV and inputs"
+            HomeKeyFallbackService.needed(a) -> "Another app is home — use launcher scripts or the remote helper under TV and inputs"
             else -> "Another app is the home app"
         }
         action("Home app", homeLine) {}
