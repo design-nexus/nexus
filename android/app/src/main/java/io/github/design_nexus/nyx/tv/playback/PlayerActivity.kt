@@ -4,11 +4,13 @@ import android.app.Activity
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.Outline
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.TextUtils
 import android.text.format.DateFormat
 import android.view.Gravity
 import android.view.KeyEvent
@@ -16,6 +18,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -47,6 +50,7 @@ import io.github.design_nexus.nyx.tv.media.StreamSource
 import io.github.design_nexus.nyx.tv.media.TimelineState
 import io.github.design_nexus.nyx.tv.media.TimelineUpdate
 import io.github.design_nexus.nyx.tv.ui.BOLD
+import io.github.design_nexus.nyx.tv.ui.Images
 import io.github.design_nexus.nyx.tv.ui.MEDIUM
 import io.github.design_nexus.nyx.tv.ui.Palette
 import io.github.design_nexus.nyx.tv.ui.WRAP
@@ -104,6 +108,37 @@ class PlayerActivity : Activity() {
     private lateinit var spinner: ProgressBar
     private var upNextHost: LinearLayout? = null
     private var upNextLabel: TextView? = null
+    private var upNextPlayBtn: TextView? = null
+    private var upNextDontBtn: TextView? = null
+    private var upNextThumbDisposable: coil3.request.Disposable? = null
+    private var activeSkipKey: String? = null
+    private var dismissedSkipKey: String? = null
+    private var dismissedUpNext = false
+    private var cancelledSkipKey: String? = null
+    private var autoSkipKey: String? = null
+    private var autoSkipLabelBase = "Skip Intro"
+    private var autoSkipSeconds = -1
+    private val autoSkipTick = object : Runnable {
+        override fun run() {
+            if (autoSkipSeconds < 0) return
+            if (player?.isPlaying != true) {
+                main.postDelayed(this, 500)
+                return
+            }
+            autoSkipSeconds--
+            if (autoSkipSeconds <= 0) {
+                val key = autoSkipKey
+                autoSkipSeconds = -1
+                autoSkipKey = null
+                cancelledSkipKey = key
+                skipBtn.text = autoSkipLabelBase
+                skipActiveMarker()
+            } else {
+                skipBtn.text = "$autoSkipLabelBase ($autoSkipSeconds)"
+                main.postDelayed(this, 1000)
+            }
+        }
+    }
     private var player: ExoPlayer? = null
     private var source: StreamSource? = null
     private var info: PlayInfo? = null
@@ -141,11 +176,15 @@ class PlayerActivity : Activity() {
     private val upNextTick = object : Runnable {
         override fun run() {
             if (upNextSeconds < 0) return
+            if (player?.isPlaying != true) {
+                main.postDelayed(this, 500)
+                return
+            }
             upNextSeconds--
             if (upNextSeconds <= 0) {
                 cancelUpNext(startNext = true)
             } else {
-                upNextLabel?.text = "Up next · plays in $upNextSeconds s"
+                upNextLabel?.text = "UP NEXT · plays in $upNextSeconds s"
                 main.postDelayed(this, 1000)
             }
         }
@@ -184,6 +223,26 @@ class PlayerActivity : Activity() {
         chrome = FrameLayout(this)
         buildChrome()
         root.addView(chrome, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        skipBand = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+            visibility = View.GONE
+            setPadding(dp(36), 0, dp(36), 0)
+        }
+        skipBtn = pill("Skip Intro", primary = true).also { b ->
+            b.id = View.generateViewId()
+            b.setOnClickListener { skipActiveMarker() }
+            skipBand.addView(b, llp(WRAP, WRAP) { marginEnd = dp(8) })
+        }
+        nextBtn = pill("Next episode", primary = false).also { b ->
+            b.id = View.generateViewId()
+            b.visibility = View.GONE
+            b.setOnClickListener { playNext() }
+            skipBand.addView(b)
+        }
+        skipBtn.nextFocusRightId = nextBtn.id
+        nextBtn.nextFocusLeftId = skipBtn.id
+        root.addView(skipBand, flp(MATCH_PARENT, WRAP_CONTENT, Gravity.BOTTOM).apply { bottomMargin = dp(168) })
         railHost = FrameLayout(this).apply { visibility = View.GONE; isClickable = true }
         root.addView(railHost, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         setContentView(root)
@@ -224,8 +283,13 @@ class PlayerActivity : Activity() {
         audioId = null
         subtitleId = null
         pendingTranscodeMs = -1L
-        upNextSeconds = -1
-        upNextHost?.visibility = View.GONE
+        activeSkipKey = null
+        dismissedSkipKey = null
+        dismissedUpNext = false
+        cancelledSkipKey = null
+        cancelAutoSkip()
+        cancelUpNext(startNext = false)
+        skipBand.visibility = View.GONE
         topTitle.text = intent.getStringExtra(EXTRA_TITLE).orEmpty()
         topMeta.text = ""
         showChrome(focusScrubber = true)
@@ -260,23 +324,6 @@ class PlayerActivity : Activity() {
         clockCol.addView(endsView, llp(WRAP, WRAP) { topMargin = dp(2) })
         top.addView(clockCol, llp(WRAP, WRAP) { marginStart = dp(24) })
         chrome.addView(top, flp(MATCH_PARENT, WRAP_CONTENT, Gravity.TOP))
-
-        skipBand = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.END
-            visibility = View.GONE
-            setPadding(dp(36), 0, dp(36), 0)
-        }
-        skipBtn = pill("Skip Intro", primary = true).also { b ->
-            b.setOnClickListener { skipActiveMarker() }
-            skipBand.addView(b, llp(WRAP, WRAP) { marginEnd = dp(8) })
-        }
-        nextBtn = pill("Next episode", primary = false).also { b ->
-            b.visibility = View.GONE
-            b.setOnClickListener { playNext() }
-            skipBand.addView(b)
-        }
-        chrome.addView(skipBand, flp(MATCH_PARENT, WRAP_CONTENT, Gravity.BOTTOM).apply { bottomMargin = dp(168) })
 
         bottomChrome = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -634,30 +681,132 @@ class PlayerActivity : Activity() {
         val credits = markers.firstOrNull { it.kind == MarkerKind.CREDITS && pos in it.startMs until it.endMs }
         val dur = (source?.durationMs ?: durationHint).coerceAtLeast(1)
         val nearEnd = pos > dur * 0.92
-        val showUpNext = prefs.autoplayNext && info?.next != null && (credits != null || nearEnd)
+        val showUpNext = prefs.autoplayNext && info?.next != null && (credits != null || nearEnd) && !dismissedUpNext
         if (showUpNext) {
+            cancelAutoSkip()
             skipBand.visibility = View.GONE
+            activeSkipKey = null
             ensureUpNext()
-        } else {
-            cancelUpNext(startNext = false)
-            when {
-                intro != null -> {
-                    skipBand.visibility = View.VISIBLE
-                    skipBtn.text = "Skip Intro"
-                    skipBtn.visibility = View.VISIBLE
-                    nextBtn.visibility = View.GONE
-                }
-                credits != null || (nearEnd && info?.next != null) -> {
-                    skipBand.visibility = View.VISIBLE
-                    if (credits != null) {
-                        skipBtn.text = "Skip Credits"
-                        skipBtn.visibility = View.VISIBLE
-                    } else skipBtn.visibility = View.GONE
-                    nextBtn.visibility = if (info?.next != null) View.VISIBLE else View.GONE
-                }
-                else -> skipBand.visibility = View.GONE
+            return
+        }
+        cancelUpNext(startNext = false)
+
+        val key: String?
+        val showSkip: Boolean
+        val baseLabel: String
+        val showNext: Boolean
+        val autoEnabled: Boolean
+        when {
+            intro != null -> {
+                key = "INTRO:${intro.startMs}"
+                showSkip = true
+                baseLabel = "Skip Intro"
+                showNext = false
+                autoEnabled = prefs.autoSkipIntro
+            }
+            credits != null || (nearEnd && info?.next != null) -> {
+                key = if (credits != null) "CREDITS:${credits.startMs}" else "NEAR_END"
+                showSkip = credits != null
+                baseLabel = "Skip Credits"
+                showNext = info?.next != null
+                autoEnabled = credits != null && prefs.autoSkipCredits
+            }
+            else -> {
+                key = null
+                showSkip = false
+                baseLabel = "Skip Intro"
+                showNext = false
+                autoEnabled = false
             }
         }
+
+        if (key == null || key == dismissedSkipKey) {
+            cancelAutoSkip()
+            skipBand.visibility = View.GONE
+            activeSkipKey = null
+            return
+        }
+
+        val isNewKey = key != activeSkipKey
+        activeSkipKey = key
+        skipBand.visibility = View.VISIBLE
+        skipBtn.visibility = if (showSkip) View.VISIBLE else View.GONE
+        nextBtn.visibility = if (showNext) View.VISIBLE else View.GONE
+        updateOverlayPositions()
+
+        if (showSkip && autoEnabled && key != cancelledSkipKey) {
+            if (autoSkipKey != key) {
+                val delay = prefs.autoSkipDelaySec
+                if (delay <= 0) {
+                    cancelledSkipKey = key
+                    cancelAutoSkip()
+                    skipBtn.text = baseLabel
+                    skipActiveMarker()
+                    return
+                }
+                startAutoSkip(key, baseLabel, delay)
+            }
+        } else {
+            cancelAutoSkip()
+            skipBtn.text = baseLabel
+        }
+
+        if (isNewKey && !menuOpen) {
+            focusSkipOrUpNext()
+        }
+    }
+
+    private fun startAutoSkip(key: String, label: String, seconds: Int) {
+        main.removeCallbacks(autoSkipTick)
+        autoSkipKey = key
+        autoSkipLabelBase = label
+        autoSkipSeconds = seconds
+        skipBtn.text = "$label ($seconds)"
+        main.postDelayed(autoSkipTick, 1000)
+    }
+
+    private fun cancelAutoSkip() {
+        main.removeCallbacks(autoSkipTick)
+        autoSkipKey = null
+        autoSkipSeconds = -1
+    }
+
+    private fun updateOverlayPositions() {
+        val margin = dp(if (chromeVisible) 168 else 48)
+        (skipBand.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
+            if (lp.bottomMargin != margin) {
+                lp.bottomMargin = margin
+                skipBand.layoutParams = lp
+            }
+        }
+        (upNextHost?.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
+            if (lp.bottomMargin != margin) {
+                lp.bottomMargin = margin
+                upNextHost?.layoutParams = lp
+            }
+        }
+    }
+
+    private fun focusSkipOrUpNext(): Boolean {
+        if (menuOpen) return false
+        upNextPlayBtn?.let { btn ->
+            if (upNextHost?.visibility == View.VISIBLE) {
+                btn.post { btn.requestFocus() }
+                return true
+            }
+        }
+        if (skipBand.visibility == View.VISIBLE) {
+            val target = when {
+                skipBtn.visibility == View.VISIBLE -> skipBtn
+                nextBtn.visibility == View.VISIBLE -> nextBtn
+                else -> null
+            }
+            if (target != null) {
+                target.post { target.requestFocus() }
+                return true
+            }
+        }
+        return false
     }
 
     private fun layoutMarkerBands() {
@@ -694,41 +843,90 @@ class PlayerActivity : Activity() {
     private fun ensureUpNext() {
         if (upNextSeconds >= 0) return
         val next = info?.next ?: return
-        upNextSeconds = UP_NEXT_COUNTDOWN_SEC
-        showChrome(focusScrubber = true)
+        upNextSeconds = prefs.upNextDelaySec
         val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(16), dp(18), dp(16))
-            background = rounded(alpha(palette.mantle, 0.94f), dp(16).toFloat())
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(14), dp(18), dp(14))
+            background = rounded(alpha(palette.mantle, 0.95f), dp(16).toFloat())
             elevation = dp(20).toFloat()
             isClickable = true
         }
-        val title = listOfNotNull(next.seriesTitle, next.episodeCode ?: next.title).joinToString(" · ")
-        card.addView(text(12f, palette.accent, BOLD, s = "UP NEXT").also {
+        val artPath = next.thumb ?: next.poster ?: next.backdrop
+        if (!artPath.isNullOrBlank()) {
+            val thumb = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                setBackgroundColor(alpha(Color.WHITE, 0.08f))
+                outlineProvider = object : ViewOutlineProvider() {
+                    override fun getOutline(view: View, outline: Outline) {
+                        outline.setRoundRect(0, 0, view.width, view.height, dp(10).toFloat())
+                    }
+                }
+                clipToOutline = true
+            }
+            card.addView(thumb, llp(dp(144), dp(81)) { marginEnd = dp(16) })
+            upNextThumbDisposable?.dispose()
+            upNextThumbDisposable = Images.load(app.images, app.plex, thumb, artPath, dp(144), dp(81))
+        }
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        val label = text(12f, palette.accent, BOLD, s = "UP NEXT · plays in $upNextSeconds s").also {
             it.letterSpacing = 0.06f
-        })
-        val label = text(16f, palette.text, BOLD, s = "Up next · plays in $upNextSeconds s")
+        }
         upNextLabel = label
-        card.addView(label, llp(WRAP, WRAP) { topMargin = dp(6) })
-        card.addView(text(14f, palette.sub0, s = title), llp(WRAP, WRAP) { topMargin = dp(4) })
+        col.addView(label)
+        val title = listOfNotNull(next.seriesTitle, next.episodeCode ?: next.title).joinToString(" · ")
+        col.addView(
+            text(16f, palette.text, BOLD, s = title).apply {
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+            },
+            llp(MATCH_PARENT, WRAP) { topMargin = dp(4) },
+        )
+        if (next.summary.isNotBlank()) {
+            col.addView(
+                text(12.5f, palette.sub0, lines = 2, s = next.summary.trim()).apply {
+                    ellipsize = TextUtils.TruncateAt.END
+                },
+                llp(MATCH_PARENT, WRAP) { topMargin = dp(4) },
+            )
+        }
         val acts = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(14), 0, 0)
+            setPadding(0, dp(12), 0, 0)
         }
         val playNow = pill("Play now", primary = true).also {
+            it.id = View.generateViewId()
             it.setOnClickListener { cancelUpNext(startNext = true) }
         }
         val dont = pill("Don't play", primary = false).also {
-            it.setOnClickListener { cancelUpNext(startNext = false) }
+            it.id = View.generateViewId()
+            it.setOnClickListener {
+                dismissedUpNext = true
+                cancelUpNext(startNext = false)
+            }
         }
+        playNow.nextFocusRightId = dont.id
+        dont.nextFocusLeftId = playNow.id
+        upNextPlayBtn = playNow
+        upNextDontBtn = dont
         acts.addView(playNow, llp(WRAP, WRAP) { marginEnd = dp(10) })
         acts.addView(dont)
-        card.addView(acts)
-        chrome.addView(card, flp(dp(420), WRAP_CONTENT, Gravity.BOTTOM or Gravity.START).apply {
-            leftMargin = dp(36); bottomMargin = dp(168)
-        })
+        col.addView(acts)
+        card.addView(col, llp(0, WRAP, 1f))
+
+        val railIndex = root.indexOfChild(railHost).takeIf { it >= 0 } ?: root.childCount
+        val margin = dp(if (chromeVisible) 168 else 48)
+        root.addView(
+            card,
+            railIndex,
+            flp(dp(560), WRAP_CONTENT, Gravity.BOTTOM or Gravity.START).apply {
+                leftMargin = dp(36); bottomMargin = margin
+            },
+        )
         upNextHost = card
-        playNow.post { playNow.requestFocus() }
+        if (!menuOpen) playNow.post { playNow.requestFocus() }
         main.removeCallbacks(upNextTick)
         main.postDelayed(upNextTick, 1000)
     }
@@ -737,7 +935,11 @@ class PlayerActivity : Activity() {
         main.removeCallbacks(upNextTick)
         upNextSeconds = -1
         upNextLabel = null
-        upNextHost?.let { chrome.removeView(it) }
+        upNextPlayBtn = null
+        upNextDontBtn = null
+        upNextThumbDisposable?.dispose()
+        upNextThumbDisposable = null
+        upNextHost?.let { root.removeView(it) }
         upNextHost = null
         if (startNext) playNext()
     }
@@ -935,11 +1137,30 @@ class PlayerActivity : Activity() {
                 speed = s; player?.playbackParameters = PlaybackParameters(s); closeMenu()
             })
         }
-        body.addView(text(11f, palette.sub0, BOLD, s = "NEXT EPISODE").also {
+        body.addView(text(11f, palette.sub0, BOLD, s = "NEXT EPISODE & SKIP").also {
             it.setPadding(dp(18), dp(14), dp(18), dp(4)); it.letterSpacing = 0.08f
         })
         body.addView(menuRow("Autoplay next", if (prefs.autoplayNext) "On" else "Off", selected = prefs.autoplayNext) {
             prefs.autoplayNext = !prefs.autoplayNext; openMenu(Menu.OPTIONS)
+        })
+        body.addView(menuRow("Auto-skip intros", if (prefs.autoSkipIntro) "On" else "Off", selected = prefs.autoSkipIntro) {
+            prefs.autoSkipIntro = !prefs.autoSkipIntro; openMenu(Menu.OPTIONS)
+        })
+        body.addView(menuRow("Auto-skip credits", if (prefs.autoSkipCredits) "On" else "Off", selected = prefs.autoSkipCredits) {
+            prefs.autoSkipCredits = !prefs.autoSkipCredits; openMenu(Menu.OPTIONS)
+        })
+        val skipChoices = listOf(0, 3, 5, 10, 15)
+        val skipLabel = if (prefs.autoSkipDelaySec == 0) "Instant" else "${prefs.autoSkipDelaySec} s"
+        body.addView(menuRow("Auto-skip countdown", skipLabel) {
+            val nextIdx = (skipChoices.indexOf(prefs.autoSkipDelaySec) + 1) % skipChoices.size
+            prefs.autoSkipDelaySec = skipChoices[nextIdx]
+            openMenu(Menu.OPTIONS)
+        })
+        val upNextChoices = listOf(5, 10, 15, 20, 30)
+        body.addView(menuRow("Up Next countdown", "${prefs.upNextDelaySec} s") {
+            val nextIdx = (upNextChoices.indexOf(prefs.upNextDelaySec) + 1) % upNextChoices.size
+            prefs.upNextDelaySec = upNextChoices[nextIdx]
+            openMenu(Menu.OPTIONS)
         })
         panelShell("Playback Options", body, 1)
     }
@@ -1021,9 +1242,13 @@ class PlayerActivity : Activity() {
         chromeVisible = true
         chrome.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
         chrome.visibility = View.VISIBLE
+        updateOverlayPositions()
         bumpChromeTimer()
-        // Always land on scrubber when showing chrome (unless a menu is open).
-        if (!menuOpen) scrubShell.post { scrubShell.requestFocus() }
+        if (!menuOpen) {
+            if (focusScrubber || !focusSkipOrUpNext()) {
+                scrubShell.post { scrubShell.requestFocus() }
+            }
+        }
     }
 
     private fun bumpChromeTimer() {
@@ -1037,15 +1262,16 @@ class PlayerActivity : Activity() {
     private fun hideChrome() {
         if (menuOpen) return
         chromeVisible = false
+        updateOverlayPositions()
         // Drop focus out of chrome so Android won't restore it onto Settings when shown again.
         scrubShell.clearFocus()
         subsBtn.clearFocus()
         settingsBtn.clearFocus()
-        skipBtn.clearFocus()
-        nextBtn.clearFocus()
         chrome.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
         chrome.visibility = View.GONE
-        root.requestFocus()
+        if (!onSkipBand() && !onUpNext()) {
+            root.requestFocus()
+        }
     }
 
     /** Plex-like seek: ~30s base, hold accelerates. */
@@ -1064,8 +1290,17 @@ class PlayerActivity : Activity() {
 
     private fun onActionRow(): Boolean {
         val f = currentFocus ?: return false
-        return f === subsBtn || f === settingsBtn || f === skipBtn || f === nextBtn ||
-            (f.parent === skipBand)
+        return f === subsBtn || f === settingsBtn
+    }
+
+    private fun onSkipBand(): Boolean {
+        val f = currentFocus ?: return false
+        return f === skipBtn || f === nextBtn || f.parent === skipBand
+    }
+
+    private fun onUpNext(): Boolean {
+        val f = currentFocus ?: return false
+        return upNextHost != null && (f === upNextPlayBtn || f === upNextDontBtn)
     }
 
     private fun report(state: TimelineState) {
@@ -1135,8 +1370,26 @@ class PlayerActivity : Activity() {
             }
             return false
         }
-        if (upNextSeconds >= 0) { cancelUpNext(startNext = false); return true }
+        if (autoSkipSeconds >= 0) {
+            cancelledSkipKey = activeSkipKey
+            cancelAutoSkip()
+            updateSkip(absolutePosition())
+            return true
+        }
         if (chromeVisible) { hideChrome(); return true }
+        if (upNextHost != null) {
+            dismissedUpNext = true
+            cancelUpNext(startNext = false)
+            root.requestFocus()
+            return true
+        }
+        if (skipBand.visibility == View.VISIBLE && onSkipBand()) {
+            dismissedSkipKey = activeSkipKey
+            cancelAutoSkip()
+            skipBand.visibility = View.GONE
+            root.requestFocus()
+            return true
+        }
         finishPlayback()
         return true
     }
@@ -1192,6 +1445,32 @@ class PlayerActivity : Activity() {
         }
 
         if (!chromeVisible) {
+            if (onSkipBand() || onUpNext()) {
+                when (key) {
+                    KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                        currentFocus?.performClick(); return true
+                    }
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        if (currentFocus === skipBtn && nextBtn.visibility == View.VISIBLE) {
+                            nextBtn.requestFocus()
+                        } else if (currentFocus === upNextPlayBtn) {
+                            upNextDontBtn?.requestFocus()
+                        }
+                        return true
+                    }
+                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                        if (currentFocus === nextBtn && skipBtn.visibility == View.VISIBLE) {
+                            skipBtn.requestFocus()
+                        } else if (currentFocus === upNextDontBtn) {
+                            upNextPlayBtn?.requestFocus()
+                        }
+                        return true
+                    }
+                    KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
+                        showChrome(focusScrubber = false); return true
+                    }
+                }
+            }
             when (key) {
                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
                     togglePlay(); return true
@@ -1201,7 +1480,7 @@ class PlayerActivity : Activity() {
                 KeyEvent.KEYCODE_DPAD_LEFT -> { seekBy(seekStep(false, event)); return true }
                 KeyEvent.KEYCODE_DPAD_RIGHT -> { seekBy(seekStep(true, event)); return true }
                 KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
-                    showChrome(focusScrubber = true); return true
+                    showChrome(focusScrubber = false); return true
                 }
                 KeyEvent.KEYCODE_MEDIA_REWIND -> { seekBy(-30_000); return true }
                 KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { seekBy(30_000); return true }
@@ -1222,25 +1501,39 @@ class PlayerActivity : Activity() {
             KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { seekBy(seekStep(true, event)); return true }
             KeyEvent.KEYCODE_DPAD_LEFT -> {
                 if (onScrubber()) { seekBy(seekStep(false, event)); return true }
+                if (currentFocus === nextBtn && skipBtn.visibility == View.VISIBLE) {
+                    skipBtn.requestFocus(); return true
+                }
+                if (currentFocus === upNextDontBtn) {
+                    upNextPlayBtn?.requestFocus(); return true
+                }
                 return super.dispatchKeyEvent(event)
             }
             KeyEvent.KEYCODE_DPAD_RIGHT -> {
                 if (onScrubber()) { seekBy(seekStep(true, event)); return true }
+                if (currentFocus === skipBtn && nextBtn.visibility == View.VISIBLE) {
+                    nextBtn.requestFocus(); return true
+                }
+                if (currentFocus === upNextPlayBtn) {
+                    upNextDontBtn?.requestFocus(); return true
+                }
                 return super.dispatchKeyEvent(event)
             }
             KeyEvent.KEYCODE_DPAD_UP -> {
                 when {
                     onScrubber() -> { settingsBtn.requestFocus(); return true }
-                    onActionRow() -> return true
-                    skipBand.visibility == View.VISIBLE && skipBtn.visibility == View.VISIBLE -> {
-                        skipBtn.requestFocus(); return true
+                    onActionRow() -> { focusSkipOrUpNext(); return true }
+                    onSkipBand() || onUpNext() -> return true
+                    else -> {
+                        if (!focusSkipOrUpNext()) scrubShell.requestFocus()
+                        return true
                     }
-                    else -> { scrubShell.requestFocus(); return true }
                 }
             }
             KeyEvent.KEYCODE_DPAD_DOWN -> {
                 when {
-                    onActionRow() || skipBand.hasFocus() -> { scrubShell.requestFocus(); return true }
+                    onSkipBand() || onUpNext() -> { settingsBtn.requestFocus(); return true }
+                    onActionRow() -> { scrubShell.requestFocus(); return true }
                     onScrubber() -> { hideChrome(); return true }
                     else -> { hideChrome(); return true }
                 }

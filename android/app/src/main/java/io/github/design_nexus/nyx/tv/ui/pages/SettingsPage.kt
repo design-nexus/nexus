@@ -797,6 +797,34 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
         autoplay.setOnClickListener { prefs.autoplayNext = !prefs.autoplayNext; autoplay.on = prefs.autoplayNext }
         autoplay.trapBodyKeys()
         body.addView(autoplay, llp(MATCH, WRAP))
+        val skipIntro = SettingRow(a, p, "Auto-skip intros", "Automatically skip intro markers after the countdown.").apply { on = prefs.autoSkipIntro }
+        skipIntro.setOnClickListener { prefs.autoSkipIntro = !prefs.autoSkipIntro; skipIntro.on = prefs.autoSkipIntro }
+        skipIntro.trapBodyKeys()
+        body.addView(skipIntro, llp(MATCH, WRAP))
+        val skipCredits = SettingRow(a, p, "Auto-skip credits", "Automatically skip end credits when Up Next is not shown.").apply { on = prefs.autoSkipCredits }
+        skipCredits.setOnClickListener { prefs.autoSkipCredits = !prefs.autoSkipCredits; skipCredits.on = prefs.autoSkipCredits }
+        skipCredits.trapBodyKeys()
+        body.addView(skipCredits, llp(MATCH, WRAP))
+        val skipDelayLabel = if (prefs.autoSkipDelaySec == 0) "Instant (0s)" else "${prefs.autoSkipDelaySec} seconds"
+        action(
+            "Auto-skip countdown",
+            "Now $skipDelayLabel before skipping intros or credits."
+        ) {
+            val choices = listOf(0, 3, 5, 10, 15).map { sec ->
+                val label = if (sec == 0) "Instant (0s)" else "$sec seconds"
+                MenuPanel.Item(label) { prefs.autoSkipDelaySec = sec; renderBody() }
+            }
+            a.showMenu("Auto-skip countdown", null, choices)
+        }
+        action(
+            "Up Next countdown",
+            "Now ${prefs.upNextDelaySec} seconds before starting the next episode."
+        ) {
+            val choices = listOf(5, 10, 15, 20, 30).map { sec ->
+                MenuPanel.Item("$sec seconds") { prefs.upNextDelaySec = sec; renderBody() }
+            }
+            a.showMenu("Up Next countdown", null, choices)
+        }
         action(
             "Audio sync offset",
             "Now ${prefs.audioOffsetMs} ms. Negative advances audio (often −500 ms when dialogue lags)."
@@ -898,13 +926,21 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
     // ---------- Ambient, TV, About ----------
 
     private fun ambient(c: LauncherConfig) {
-        heading("Ambient mode", "Artwork from your library and a clock, or a black screen with a dim clock for OLED. It never keeps the TV awake: the TV's own sleep timer still applies.")
-        toggle("Start when Home is idle", null, c.ambient.enabled) { x, v -> x.copy(ambient = x.ambient.copy(enabled = v)) }
+        val tv = TvSystem(a)
+        heading("Ambient mode", "Controls both Nyx TV Ambient and the TV's system screensaver (when granted secure settings permission). It never keeps the TV awake: the TV's own sleep timer still applies.")
+        val row = SettingRow(a, p, "Start when Home is idle", null).apply { on = c.ambient.enabled }
+        row.setOnClickListener {
+            val next = row.on != true
+            row.on = next
+            a.app.config.update { x -> x.copy(ambient = x.ambient.copy(enabled = next)) }
+            tv.syncScreensaver(next)
+        }
+        row.trapBodyKeys()
+        body.addView(row, llp(MATCH, WRAP))
         choice("Idle time", null, listOf(5, 10, 15, 30, 60).map { it to "$it min" }, c.ambient.idleMinutes) { v -> a.app.config.update { it.copy(ambient = it.ambient.copy(idleMinutes = v)) } }
         choice("Show", null, listOf(AmbientSource.ARTWORK to "Library artwork", AmbientSource.BLACK to "Black with a clock"), c.ambient.source) { v -> a.app.config.update { it.copy(ambient = it.ambient.copy(source = v)) } }
         toggle("Clock", null, c.ambient.showClock) { x, v -> x.copy(ambient = x.ambient.copy(showClock = v)) }
         action("Start now") { a.startAmbient() }
-        val tv = TvSystem(a)
         if (tv.canOpen(TvSystem.Screen.SCREENSAVER)) action("Use as the TV's screensaver", "Choose “Nyx TV Ambient” in the TV's screensaver settings") { tv.open(TvSystem.Screen.SCREENSAVER) }
     }
 

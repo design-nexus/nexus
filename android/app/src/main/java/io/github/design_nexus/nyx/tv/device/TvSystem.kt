@@ -21,7 +21,7 @@ class TvSystem(private val context: Context) {
         PICTURE(listOf("android.settings.DISPLAY_SETTINGS", Settings.ACTION_DISPLAY_SETTINGS)),
         SOUND(listOf(Settings.ACTION_SOUND_SETTINGS)),
         DATE(listOf(Settings.ACTION_DATE_SETTINGS)),
-        SCREENSAVER(listOf(Settings.ACTION_DREAM_SETTINGS)),
+        SCREENSAVER(listOf("com.google.android.tv.settings.ambient", Settings.ACTION_DREAM_SETTINGS)),
         ABOUT(listOf(Settings.ACTION_DEVICE_INFO_SETTINGS)),
         /** Power / energy / sleep screens — first match that resolves wins. */
         POWER(
@@ -44,6 +44,30 @@ class TvSystem(private val context: Context) {
             if (i.resolveActivity(context.packageManager) != null && runCatching { context.startActivity(i) }.isSuccess) return true
         }
         return false
+    }
+
+    /**
+     * Sync Android TV's system screensaver with Nyx TV's Ambient setting when
+     * `WRITE_SECURE_SETTINGS` has been granted via ADB.
+     */
+    fun syncScreensaver(enabled: Boolean): Boolean {
+        if (context.checkSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            return false
+        }
+        return runCatching {
+            val cr = context.contentResolver
+            Settings.Secure.putInt(cr, "screensaver_enabled", if (enabled) 1 else 0)
+            if (enabled) {
+                Settings.Secure.putString(
+                    cr,
+                    "screensaver_components",
+                    "${context.packageName}/.ambient.AmbientDreamService",
+                )
+            }
+            true
+        }.getOrDefault(false)
     }
 
     /**

@@ -36,6 +36,10 @@ class AmbientDreamService : DreamService() {
 
     private fun mountView(app: NyxTvApp) {
         val c = app.config.config.value
+        if (!c.ambient.enabled) {
+            finish()
+            return
+        }
         val v = AmbientView(this, Palette.of(c.theme, c.accent), c.ambient.source, c.ambient.showClock, c.clock24h)
         view = v
         setContentView(v)

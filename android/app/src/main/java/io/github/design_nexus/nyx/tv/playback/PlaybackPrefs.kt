@@ -28,6 +28,26 @@ class PlaybackPrefs(context: Context) {
         get() = prefs.getBoolean("autoplay_next", false)
         set(v) = prefs.edit().putBoolean("autoplay_next", v).apply()
 
+    /** Automatically skip intro markers after [autoSkipDelaySec]. */
+    var autoSkipIntro: Boolean
+        get() = prefs.getBoolean("auto_skip_intro", false)
+        set(v) = prefs.edit().putBoolean("auto_skip_intro", v).apply()
+
+    /** Automatically skip credits markers (when Up Next is not shown) after [autoSkipDelaySec]. */
+    var autoSkipCredits: Boolean
+        get() = prefs.getBoolean("auto_skip_credits", false)
+        set(v) = prefs.edit().putBoolean("auto_skip_credits", v).apply()
+
+    /** Countdown in seconds before auto-skipping intro/credits (0 = instant). */
+    var autoSkipDelaySec: Int
+        get() = prefs.getInt("auto_skip_delay_sec", 5).coerceIn(0, 30)
+        set(v) = prefs.edit().putInt("auto_skip_delay_sec", v.coerceIn(0, 30)).apply()
+
+    /** Countdown in seconds before Up Next auto-plays the next episode. */
+    var upNextDelaySec: Int
+        get() = prefs.getInt("up_next_delay_sec", 15).coerceIn(3, 60)
+        set(v) = prefs.edit().putInt("up_next_delay_sec", v.coerceIn(3, 60)).apply()
+
     /** Prefer direct play; fall back to convert when the TV can't decode. */
     var preferDirectPlay: Boolean
         get() = prefs.getBoolean("prefer_direct", true)

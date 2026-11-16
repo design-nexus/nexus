@@ -125,6 +125,7 @@ class HomeActivity : Activity() {
         super.onCreate(savedInstanceState)
         scope.launch {
             config = app.config.load()
+            TvSystem(this@HomeActivity).syncScreensaver(config.ambient.enabled)
             palette = Palette.of(config.theme, config.accent)
             build()
             showRoot("home", focus = true)
