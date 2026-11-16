@@ -62,6 +62,7 @@ fn fill_devices(list: &gtk::Box) {
         list.remove(&c);
     }
     let devices = window::saved_devices();
+    SHOWN.with(|s| *s.borrow_mut() = devices.clone());
     if devices.is_empty() {
         let empty = w::label("No TVs yet. Add one from the sidebar.", "dim");
         empty.set_xalign(0.0);
@@ -72,61 +73,47 @@ fn fill_devices(list: &gtk::Box) {
         list.append(&empty);
         return;
     }
-    for (serial, name) in devices {
+    for (key, name, online) in devices {
         let end = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         end.set_valign(gtk::Align::Center);
-        let rename = gtk::Button::with_label("Rename");
-        let s = serial.clone();
-        rename.connect_clicked(move |_| {
-            window::rename_tv(&s);
-        });
-        let remove = gtk::Button::with_label("Remove");
-        remove.add_css_class("flat");
-        let s = serial.clone();
-        remove.connect_clicked(move |_| {
-            window::remove_tv(&s);
-            refresh_devices_list();
-        });
+        let rename = w::icon_button("document-edit-symbolic", "Rename");
+        let k = key.clone();
+        rename.connect_clicked(move |_| window::rename_tv(&k));
+        let k = key.clone();
+        let remove = w::two_click("Remove", "Remove now?", move || window::forget_tv(&k));
         end.append(&rename);
         end.append(&remove);
 
-        let lead = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        lead.add_css_class("cdot");
-        // Online status: green if adb sees the serial.
-        let online = nyx_tv_adb::Adb::devices()
-            .unwrap_or_default()
-            .into_iter()
-            .any(|d| d.serial == serial && d.state == "device");
-        if online {
-            lead.add_css_class("on");
-        }
-        lead.set_valign(gtk::Align::Center);
-
-        let row = w::row(&name, &serial, Some(end.upcast_ref()));
-        // Prepend online cdot into the standard settings row.
-        if let Some(content) = row.first_child() {
-            row.prepend(&lead);
-            let _ = content;
-        } else {
-            row.prepend(&lead);
-        }
+        let desc = if online { format!("{key} · online") } else { format!("{key} · offline") };
+        let row = w::row(&name, &desc, Some(end.upcast_ref()));
+        let lead = crate::page::dot(online);
+        row.prepend(&lead);
         list.append(&row);
     }
 }
 
 fn refresh_devices_list() {
-    if let Some(root) = settings_card::page() {
-        if let Some(list) = find_named(&root, "devices-list") {
-            if let Ok(box_) = list.downcast::<gtk::Box>() {
+    if let Some(root) = settings_card::page()
+        && let Some(list) = find_named(&root, "devices-list")
+            && let Ok(box_) = list.downcast::<gtk::Box>() {
                 fill_devices(&box_);
             }
-        }
-    }
 }
 
-/// Rebuild the Devices list when Settings is already open (after rename/remove).
+thread_local! {
+    static SHOWN: std::cell::RefCell<Vec<(String, String, bool)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Rebuild the Devices list when Settings is open and the list changed
+/// (a rebuild would disarm a half-clicked Remove).
 pub fn refresh_if_open() {
-    if settings_card::is_open() {
+    if !settings_card::is_open() {
+        return;
+    }
+    let now = window::saved_devices();
+    let changed = SHOWN.with(|s| *s.borrow() != now);
+    if changed {
+        SHOWN.with(|s| *s.borrow_mut() = now);
         refresh_devices_list();
     }
 }

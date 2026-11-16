@@ -1176,29 +1176,62 @@ pub fn find_local_apk(repo: &Path, debug: bool) -> Option<PathBuf> {
 
 /// Build the Android release APK using `./gradlew :app:assembleRelease`.
 pub fn build_release_apk(repo: &Path) -> Result<PathBuf> {
+    build_release_apk_with(repo, &mut |_| {})
+}
+
+/// [`build_release_apk`], handing each line of Gradle output to `on_line`
+/// as it arrives.
+pub fn build_release_apk_with(repo: &Path, on_line: &mut dyn FnMut(&str)) -> Result<PathBuf> {
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+
     let android_dir = repo.join("android");
     let gradlew = android_dir.join("gradlew");
     if !gradlew.is_file() {
         bail!("Gradle wrapper not found at {}", gradlew.display());
     }
-    let out = std::process::Command::new(&gradlew)
+    let mut child = Command::new(&gradlew)
         .current_dir(&android_dir)
         .args([":app:assembleRelease", "--console=plain"])
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .with_context(|| format!("failed to run {}", gradlew.display()))?;
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        let tail: String = stderr
-            .lines()
-            .chain(stdout.lines())
-            .rev()
-            .take(12)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect::<Vec<_>>()
-            .join("\n");
+
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    let mut readers = Vec::new();
+    if let Some(out) = child.stdout.take() {
+        let tx = tx.clone();
+        readers.push(thread::spawn(move || {
+            for line in BufReader::new(out).lines().map_while(Result::ok) {
+                let _ = tx.send(line);
+            }
+        }));
+    }
+    if let Some(err) = child.stderr.take() {
+        let tx = tx.clone();
+        readers.push(thread::spawn(move || {
+            for line in BufReader::new(err).lines().map_while(Result::ok) {
+                let _ = tx.send(line);
+            }
+        }));
+    }
+    drop(tx);
+
+    let mut tail: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+    for line in rx {
+        on_line(&line);
+        tail.push_back(line);
+        if tail.len() > 12 {
+            tail.pop_front();
+        }
+    }
+    for r in readers {
+        let _ = r.join();
+    }
+    let status = child.wait()?;
+    if !status.success() {
+        let tail = tail.into_iter().collect::<Vec<_>>().join("\n");
         bail!("Gradle release build failed:\n{tail}");
     }
     find_local_apk(repo, false).ok_or_else(|| anyhow!("Release APK missing after build"))

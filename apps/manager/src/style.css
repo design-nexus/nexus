@@ -1,121 +1,12 @@
-/* TV Manager — Design 2.0, Manager A (matches mockups/tv/manager.css). */
+/* TV Manager — Design 2.0. Colours are theme tokens only (see STYLE.md). */
 
-/* Design 2.0 sidebar: 212px (width capped in code — GTK CSS has no max-width). */
+/* ---------- Sidebar ---------- */
 window.tv-manager-window .settings-navigation {
   min-width: 212px;
 }
 
 window.tv-manager-window .settings-navigation.compact {
   min-width: 0;
-}
-
-window.tv-manager-window .page-bar {
-  padding: 14px 20px 0;
-  min-height: 48px;
-}
-
-window.tv-manager-window .page-title {
-  font-size: 1.25em;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-}
-
-window.tv-manager-window .page-sub {
-  color: @theme_dim_text;
-  font-size: 0.95em;
-}
-
-window.tv-manager-window .mbody {
-  padding: 16px 20px 20px;
-  min-height: 0;
-}
-
-window.tv-manager-window .mrow {
-  min-height: 0;
-}
-
-window.tv-manager-window .kcard {
-  padding: 10px 12px;
-  min-width: 0;
-}
-
-/* Flat buttons stay light; primary CTAs keep a bit of weight. */
-window.tv-manager-window button,
-window.tv-manager-window button label {
-  font-weight: 400;
-  letter-spacing: 0.01em;
-}
-
-window.tv-manager-window button.suggested-action,
-window.tv-manager-window button.suggested-action label {
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-
-window.tv-manager-window .dim {
-  color: @theme_text_tertiary;
-}
-
-window.tv-manager-window .kcard-k {
-  color: @theme_text_tertiary;
-  font-size: 0.85em;
-  font-weight: 600;
-}
-
-window.tv-manager-window .kcard-v {
-  font-size: 1.4em;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  font-feature-settings: "tnum";
-}
-
-window.tv-manager-window .kcard-s {
-  color: @theme_dim_text;
-  font-size: 0.92em;
-}
-
-/* Cards: Design 2.0 card fill + hairline (mockup .mcard / --hair). */
-window.tv-manager-window .mcard,
-window.tv-manager-window .discover-list {
-  background: @theme_card;
-  border-radius: var(--nyx-radius-card);
-  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.1);
-  padding: 14px 16px;
-  min-width: 0;
-  min-height: 0;
-}
-
-window.tv-manager-window .discover-list {
-  padding: 6px 0;
-}
-
-window.tv-manager-window .mcard-title {
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-
-window.tv-manager-window .mcard-body {
-  color: @theme_dim_text;
-  line-height: 1.45;
-}
-
-window.tv-manager-window .kv-key {
-  color: @theme_text_tertiary;
-  font-size: 0.92em;
-  padding-top: 2px;
-}
-
-window.tv-manager-window .kv-val {
-  font-size: 0.95em;
-}
-
-window.tv-manager-window .kv-val.mono {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.88em;
-}
-
-window.tv-manager-window .actions-row {
-  margin-top: 12px;
 }
 
 window.tv-manager-window .side-foot {
@@ -131,6 +22,15 @@ window.tv-manager-window .side-foot-row image {
   color: @theme_success;
 }
 
+window.tv-manager-window .tv-row {
+  margin: 0 2px;
+}
+
+window.tv-manager-window .nav-advanced {
+  color: @theme_text_tertiary;
+  font-size: 0.85em;
+}
+
 window.tv-manager-window .cdot {
   min-width: 8px;
   min-height: 8px;
@@ -142,865 +42,256 @@ window.tv-manager-window .cdot.on {
   background: @theme_success;
 }
 
-window.tv-manager-window .tv-row {
-  margin: 0 2px;
+window.tv-manager-window .dim {
+  color: @theme_text_tertiary;
 }
 
-window.tv-manager-window .nav-advanced {
+/* ---------- Buttons ---------- */
+window.tv-manager-window button.suggested-action,
+window.tv-manager-window button.suggested-action label {
+  font-weight: 600;
+}
+
+/* ---------- Page scaffold ---------- */
+window.tv-manager-window .tm-head {
+  padding: 12px 16px 12px 22px;
+  min-height: 36px;
+}
+
+window.tv-manager-window .tm-title {
+  font-size: 1.15em;
+  font-weight: 600;
+}
+
+window.tv-manager-window .tm-sub {
+  color: @theme_dim_text;
+}
+
+window.tv-manager-window .tm-body {
+  padding: 4px 22px 22px;
+}
+
+/* ---------- Cards and rows ---------- */
+window.tv-manager-window .tm-card {
+  padding: 4px 0 6px;
+}
+
+window.tv-manager-window .tm-card-head {
+  padding: 8px 10px 2px 16px;
+  min-height: 30px;
+}
+
+window.tv-manager-window .tm-rows {
+  padding: 0 2px;
+}
+
+window.tv-manager-window .tm-row {
+  padding: 8px 14px;
+  min-height: 40px;
+  border-radius: var(--nyx-radius-small);
+}
+
+window.tv-manager-window .tm-row image {
+  color: @theme_dim_text;
+}
+
+window.tv-manager-window .tm-row-title {
+  font-weight: 500;
+}
+
+window.tv-manager-window .tm-row-desc {
+  color: @theme_dim_text;
+  font-size: 0.92em;
+}
+
+window.tv-manager-window .tm-row.dim .tm-row-title {
+  color: @theme_dim_text;
+}
+
+window.tv-manager-window .tm-note {
+  color: @theme_dim_text;
+  font-size: 0.92em;
+  padding: 6px 14px 8px;
+}
+
+window.tv-manager-window .tm-banner {
+  padding: 10px 14px;
+}
+
+window.tv-manager-window .tm-error {
+  color: @theme_danger;
+  font-size: 0.92em;
+}
+
+window.tv-manager-window .empty-state {
+  padding: 32px 16px;
+}
+
+/* ---------- Facts ---------- */
+window.tv-manager-window .tm-facts {
+  padding: 6px 14px 10px;
+}
+
+window.tv-manager-window .tm-fact-k {
+  color: @theme_dim_text;
+  min-width: 108px;
+}
+
+/* ---------- Overview: setup steps ---------- */
+window.tv-manager-window .tm-steps {
+  padding: 8px 12px 4px;
+}
+
+window.tv-manager-window .tm-step {
+  padding: 10px 12px;
+  border-radius: var(--nyx-radius-small);
+  background: @field;
+  min-width: 150px;
+}
+
+window.tv-manager-window .tm-step-title {
+  font-weight: 500;
+}
+
+window.tv-manager-window .tm-step-value {
+  color: @theme_dim_text;
+  font-size: 0.92em;
+  margin-left: 24px;
+}
+
+window.tv-manager-window .tm-step.done .tm-step-mark {
+  color: @theme_success;
+}
+
+window.tv-manager-window .tm-step.todo .tm-step-mark {
+  color: @theme_text_tertiary;
+}
+
+window.tv-manager-window .tm-step.todo {
+  box-shadow: inset 0 0 0 1px alpha(@theme_accent, 0.35);
+}
+
+window.tv-manager-window .tm-next {
+  padding-top: 8px;
+}
+
+window.tv-manager-window .tm-feed-row {
+  padding: 6px 14px;
+}
+
+window.tv-manager-window .tm-feed-time {
+  color: @theme_text_tertiary;
+  font-feature-settings: "tnum";
+}
+
+/* ---------- Home screen ---------- */
+window.tv-manager-window .tm-table {
+  padding: 4px 14px 6px;
+}
+
+window.tv-manager-window .tm-th {
   color: @theme_text_tertiary;
   font-size: 0.85em;
+  font-weight: 600;
+  padding: 4px 0;
 }
 
-window.tv-manager-window .status-line {
-  padding: 0 20px 12px;
+window.tv-manager-window .tm-td {
+  padding: 7px 0;
+}
+
+window.tv-manager-window .tm-change {
+  color: @theme_accent;
+  font-weight: 600;
+}
+
+window.tv-manager-window image.tm-ok {
+  color: @theme_success;
+}
+
+window.tv-manager-window image.tm-bad {
+  color: @theme_danger;
+}
+
+/* ---------- Diagnostics ---------- */
+window.tv-manager-window .tm-metric {
+  padding: 12px 14px;
+  min-width: 150px;
+}
+
+window.tv-manager-window .tm-metric-k {
+  color: @theme_dim_text;
+  font-size: 0.92em;
+}
+
+window.tv-manager-window .tm-metric-v {
+  font-size: 1.5em;
+  font-weight: 600;
+}
+
+window.tv-manager-window .tm-metric-s {
   color: @theme_text_tertiary;
   font-size: 0.88em;
 }
 
-/* Discover rows — mockup .lrow */
-window.tv-manager-window .lrow {
-  min-height: 52px;
-  padding: 8px 12px;
-  margin: 0 6px;
+window.tv-manager-window .tm-log-box {
+  margin: 4px 14px 2px;
   border-radius: var(--nyx-radius-small);
+  background: mix(@theme_bg, @theme_shadow, 0.35);
 }
 
-window.tv-manager-window .lrow.sel {
-  background: @nav_active;
-}
-
-window.tv-manager-window .lrow .lrow-title {
-  font-weight: 500;
-}
-
-window.tv-manager-window .lrow .lrow-sub {
+window.tv-manager-window .tm-log {
+  padding: 10px 12px;
+  font-size: 0.85em;
   color: @theme_dim_text;
-  font-size: 0.92em;
 }
 
-window.tv-manager-window .lrow .lrow-end {
-  color: @theme_text_tertiary;
-  font-size: 0.92em;
-}
-
-/* Pair digit boxes — mockup .pair span */
-window.tv-manager-window entry.pair-digit {
-  min-width: 34px;
-  min-height: 42px;
-  padding: 0;
-  font-size: 1.3em;
-  font-weight: 600;
-  border-radius: 8px;
-  background: @field;
-  border: none;
-  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.08);
-  outline: none;
-}
-
-window.tv-manager-window entry.pair-digit:focus {
-  box-shadow: inset 0 0 0 1.5px alpha(@theme_accent, 0.55);
-}
-
-window.tv-manager-window .pair-port-field {
-  background: @field;
-  border-radius: 8px;
-  padding: 0 10px;
-  min-height: 42px;
-  min-width: 0;
-  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.08);
-}
-
-window.tv-manager-window .pair-port-field entry {
+window.tv-manager-window textview.tm-log,
+window.tv-manager-window textview.tm-log text {
   background: transparent;
-  border: none;
-  box-shadow: none;
-  min-height: 40px;
-  padding-left: 0;
+}
+
+/* ---------- Debloat ---------- */
+window.tv-manager-window .tm-pkg-id {
+  color: @theme_text_tertiary;
   font-family: "JetBrains Mono", monospace;
-  font-size: 0.9em;
+  font-size: 0.85em;
 }
 
-window.tv-manager-window .pair-host {
-  color: @theme_dim_text;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.9em;
-  margin-right: 2px;
-}
-
-window.tv-manager-window .manual-row entry {
-  background: @field;
-  border: none;
-  border-radius: var(--nyx-radius-small);
-  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.08);
-  min-height: 32px;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.9em;
-}
-
-window.tv-manager-window .group-list {
-  padding: 2px 0;
-}
-
-window.tv-manager-window .group-list.card {
-  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.08);
-}
-
-/* Mockup opt rows are ~40px; Design 2.0 settings-option defaults taller. */
-window.tv-manager-window .group-list .settings-option {
-  min-height: 40px;
+window.tv-manager-window .tm-expander {
   padding: 6px 14px;
 }
 
-window.tv-manager-window .grpbar {
-  padding: 10px 4px 4px;
-}
-
-window.tv-manager-window .tm-train.narrow .ages {
-  min-width: 0;
-  border-right: none;
-  border-bottom: 1px solid alpha(@theme_text, 0.1);
-}
-
-window.tv-manager-window .sechead {
-  color: @theme_text_tertiary;
-  font-size: 0.85em;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  margin-top: 4px;
-}
-
-window.tv-manager-window .term {
-  background: shade(@theme_bg, 0.7);
-  border-radius: var(--nyx-radius-small);
-  padding: 12px 14px;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.85em;
-  color: @theme_dim_text;
-  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.08);
-}
-
-window.tv-manager-window .grpbar {
-  padding: 12px 4px 6px;
+window.tv-manager-window .tm-expander > title {
   font-weight: 600;
 }
 
-window.tv-manager-window .cls {
-  font-size: 0.8em;
-  font-weight: 600;
-  padding: 0 7px;
-  min-height: 20px;
-  border-radius: 5px;
-  background: alpha(@theme_accent, 0.18);
-  color: @theme_accent;
+/* ---------- Status strip (running operation) ---------- */
+window.tv-manager-window .tm-strip {
+  padding: 6px 12px 6px 22px;
+  border-top: 1px solid @divider;
 }
 
-window.tv-manager-window .cls.dep {
-  background: alpha(@theme_warning, 0.18);
-  color: @theme_warning;
+window.tv-manager-window .tm-strip progressbar trough {
+  min-height: 4px;
 }
 
-window.tv-manager-window .cls.pro,
-window.tv-manager-window .cls.unk {
-  background: alpha(@theme_text, 0.08);
-  color: @theme_text_tertiary;
-}
-
-window.tv-manager-window .metric-row {
-  min-height: 0;
-}
-
-window.tv-manager-window .warn-text {
-  color: @theme_warning;
-}
-
-window.tv-manager-window .ok {
-  color: @theme_success;
-}
-
-window.tv-manager-window .cls.opt {
-  background: alpha(@theme_success, 0.18);
-  color: @theme_success;
-}
-
-/* —— TV Manager pages option A (mockups/tv-manager-pages) —— */
-
-window.tv-manager-window .tm-pad {
-  padding: 18px 22px 22px;
-}
-
-window.tv-manager-window .dim2 {
-  color: @theme_text_tertiary;
-}
-
-window.tv-manager-window .mono {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.9em;
-}
-
-window.tv-manager-window .dot {
-  min-width: 8px;
-  min-height: 8px;
-  border-radius: 999px;
-  background: @theme_text_tertiary;
-}
-
-window.tv-manager-window .dot.on {
-  background: @theme_success;
-}
-
-/* Next-action console (Overview A) */
-window.tv-manager-window .tm-next .stage {
-  padding: 28px 28px 24px;
-  border-bottom: 1px solid alpha(@theme_text, 0.1);
-  background: alpha(@theme_accent, 0.08);
-}
-
-window.tv-manager-window .tm-next .meta-chip {
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: alpha(@theme_text, 0.05);
-  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.08);
-}
-
-window.tv-manager-window .tm-next .meta-k {
-  color: @theme_text_tertiary;
-  font-size: 0.85em;
-  font-weight: 600;
-}
-
-window.tv-manager-window .tm-next .meta-v {
-  font-weight: 600;
-  font-size: 0.92em;
-}
-
-window.tv-manager-window .tm-next .eyebrow {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: @theme_text_tertiary;
-}
-
-window.tv-manager-window .tm-next .headline {
-  font-size: 1.85em;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-}
-
-window.tv-manager-window .tm-next .lede {
-  color: @theme_dim_text;
-  line-height: 1.45;
-}
-
-window.tv-manager-window .tm-next .cta-row {
-  margin-top: 6px;
-}
-
-window.tv-manager-window .tm-next .meta-row {
-  margin-top: 8px;
-  color: @theme_text_tertiary;
-  font-size: 0.923em;
-}
-
-window.tv-manager-window .tm-next .meta-row .meta-val {
-  color: @theme_text;
-  font-weight: 600;
-}
-
-window.tv-manager-window .tm-next .feed {
-  padding: 16px 28px 28px;
-}
-
-window.tv-manager-window .tm-next .feed-h {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: @theme_text_tertiary;
-  margin-bottom: 10px;
-}
-
-window.tv-manager-window .tm-feed-row {
-  padding: 10px 0;
-  border-bottom: 1px solid alpha(@theme_text, 0.08);
-  font-size: 0.95em;
-}
-
-window.tv-manager-window .tm-feed-row .t {
-  color: @theme_text_tertiary;
-  font-feature-settings: "tnum";
-  font-size: 0.9em;
-  min-width: 64px;
-}
-
-window.tv-manager-window .tm-feed-row .x {
-  color: @theme_dim_text;
-}
-
-/* Discovery tiles (Add A) */
-window.tv-manager-window .tm-discover {
-  min-height: 0;
-}
-
-window.tv-manager-window .tm-discover .hero {
-  padding: 36px 28px 20px;
-  border-bottom: 1px solid alpha(@theme_text, 0.1);
-}
-
-window.tv-manager-window .tm-discover .hero .pulse {
-  min-width: 72px;
-  min-height: 72px;
-  border-radius: 999px;
-  background: alpha(@theme_accent, 0.14);
-  box-shadow: 0 0 0 12px alpha(@theme_accent, 0.06);
-  color: @theme_accent;
-  margin-bottom: 10px;
-}
-
-window.tv-manager-window .tm-discover .hero .pulse image {
-  color: @theme_accent;
-}
-
-window.tv-manager-window .tm-discover .hero .hero-title {
-  font-size: 1.5em;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
-window.tv-manager-window .tm-discover .hero .hero-lede {
-  color: @theme_dim_text;
-}
-
-window.tv-manager-window .tm-tiles {
-  padding: 18px 22px;
-}
-
-window.tv-manager-window .tm-tile {
-  background: @theme_card;
-  border-radius: 14px;
-  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.1);
-  padding: 16px;
-  min-height: 140px;
-  min-width: 220px;
-}
-
-window.tv-manager-window .tm-tile.sel {
-  box-shadow: inset 0 0 0 1.5px alpha(@theme_accent, 0.55);
-}
-
-window.tv-manager-window .tm-tile .nm {
-  font-size: 1.1em;
-  font-weight: 600;
-}
-
-window.tv-manager-window .tm-tile .sub {
-  color: @theme_dim_text;
-  font-size: 0.923em;
-  line-height: 1.4;
-}
-
-window.tv-manager-window .tm-pair-sheet {
-  background: @theme_bg;
-  border-top: 1px solid alpha(@theme_text, 0.1);
-  padding: 18px 22px 22px;
-  box-shadow: 0 -12px 40px alpha(@theme_shadow, 0.35);
-}
-
-window.tv-manager-window .tm-pair-sheet .pair-title {
-  font-weight: 600;
-}
-
-window.tv-manager-window .tm-manual-popover {
-  padding: 12px;
-  min-width: 280px;
-}
-
-/* Version train (Install A) */
-window.tv-manager-window .tm-train {
-  min-height: 0;
-}
-
-window.tv-manager-window .tm-train .ages {
-  border-right: 1px solid alpha(@theme_text, 0.1);
-  padding: 12px 0;
-  min-width: 260px;
-}
-
-window.tv-manager-window .tm-train .age {
-  padding: 12px 16px 12px 18px;
-  border-radius: 0;
-}
-
-window.tv-manager-window .tm-train .age:hover {
-  background: alpha(@theme_text, 0.04);
-}
-
-window.tv-manager-window .tm-train .age.sel {
-  background: alpha(@theme_accent, 0.1);
-}
-
-window.tv-manager-window .tm-train .age .rail {
-  min-width: 14px;
-}
-
-window.tv-manager-window .tm-train .ages > *:not(:last-child) .rail {
-  /* Vertical connector under the blob. */
-  box-shadow: inset -7px -8px 0 -6px alpha(@theme_text, 0.12);
-  padding-bottom: 18px;
-  margin-bottom: -18px;
-}
-
-window.tv-manager-window .tm-train .age .blob {
-  min-width: 14px;
-  min-height: 14px;
-  border-radius: 999px;
-  background: @theme_text_tertiary;
-  margin-top: 3px;
-}
-
-window.tv-manager-window .tm-train .age.sel .blob {
+window.tv-manager-window .tm-strip progressbar progress {
+  min-height: 4px;
   background: @theme_accent;
-  box-shadow: 0 0 0 3px alpha(@theme_accent, 0.22);
 }
 
-window.tv-manager-window .tm-train .age.cur .blob {
-  background: @theme_success;
-}
-
-window.tv-manager-window .tm-train .detail {
-  padding: 22px;
-}
-
-window.tv-manager-window .tm-train .detail .detail-eyebrow {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: @theme_text_tertiary;
-}
-
-window.tv-manager-window .tm-train .detail .detail-title {
-  font-size: 1.45em;
-  font-weight: 600;
-}
-
-window.tv-manager-window .tm-train .changes {
-  background: @theme_card;
-  border-radius: 12px;
-  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.1);
-  padding: 14px 16px;
-}
-
-/* State map (Launcher A) */
-window.tv-manager-window .tm-state {
-  padding: 28px 22px;
-}
-
-window.tv-manager-window .tm-state .node {
-  min-width: 140px;
-  padding: 16px 18px;
-  border-radius: 14px;
-  background: @theme_card;
-  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.1);
-}
-
-window.tv-manager-window .tm-state .node.on {
-  box-shadow: inset 0 0 0 1.5px alpha(@theme_accent, 0.55);
-  background: alpha(@theme_accent, 0.08);
-}
-
-window.tv-manager-window .tm-state .node .l {
-  font-size: 0.8em;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: @theme_text_tertiary;
-  font-weight: 600;
-}
-
-window.tv-manager-window .tm-state .node .node-title {
-  font-size: 1.1em;
-  font-weight: 600;
-  margin-top: 4px;
-}
-
-window.tv-manager-window .tm-state .arrow {
-  color: @theme_text_tertiary;
-  font-size: 1.4em;
-}
-
-window.tv-manager-window .tm-state .ops .op-card {
-  padding: 14px;
-  background: @theme_card;
-  border-radius: 12px;
-  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.1);
-  min-width: 160px;
-}
-
-window.tv-manager-window .tm-state .ops .op-card .op-sub {
-  color: @theme_dim_text;
-  font-size: 0.923em;
-}
-
-/* Diff columns (Replace A) */
-window.tv-manager-window .tm-diff .col {
-  border-right: 1px solid alpha(@theme_text, 0.1);
-}
-
-window.tv-manager-window .tm-diff .col:last-child {
-  border-right: none;
-}
-
-window.tv-manager-window .tm-diff .hh {
-  padding: 12px 16px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: @theme_text_tertiary;
-  border-bottom: 1px solid alpha(@theme_text, 0.1);
-  background: alpha(@theme_text, 0.02);
-}
-
-window.tv-manager-window .tm-diff .col.after .hh {
-  color: @theme_accent;
-}
-
-window.tv-manager-window .tm-diff .row {
-  padding: 12px 16px;
-  border-bottom: 1px solid alpha(@theme_text, 0.08);
-  font-size: 0.95em;
-}
-
-window.tv-manager-window .tm-diff .row .k {
+window.tv-manager-window .tm-strip-text {
   color: @theme_dim_text;
 }
 
-window.tv-manager-window .tm-diff .row.chg {
-  background: alpha(@theme_accent, 0.06);
-}
-
-window.tv-manager-window .tm-diff .row.chg .v {
-  font-weight: 600;
-}
-
-window.tv-manager-window .tm-diff-bar {
-  padding: 14px 16px;
-  border-top: 1px solid alpha(@theme_text, 0.1);
-  background: alpha(@theme_bg, 0.92);
-}
-
-/* Traffic lights (Verify A) */
-window.tv-manager-window .tm-lights {
-  padding: 18px 22px;
-}
-
-window.tv-manager-window .tm-light {
-  border-radius: 14px;
-  padding: 18px 16px;
-  background: @theme_card;
-  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.1);
-  min-height: 120px;
-  min-width: 180px;
-}
-
-window.tv-manager-window .tm-light .st {
-  font-size: 0.75em;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: @theme_text_tertiary;
-}
-
-window.tv-manager-window .tm-light.ok {
-  background: alpha(@theme_success, 0.1);
-  box-shadow: inset 0 0 0 1px alpha(@theme_success, 0.3);
-}
-
-window.tv-manager-window .tm-light.ok .st {
-  color: @theme_success;
-}
-
-window.tv-manager-window .tm-light.wait {
-  background: alpha(@theme_warning, 0.1);
-  box-shadow: inset 0 0 0 1px alpha(@theme_warning, 0.28);
-}
-
-window.tv-manager-window .tm-light.wait .st {
-  color: @theme_warning;
-}
-
-window.tv-manager-window .tm-light.idle {
-  background: alpha(@theme_text, 0.04);
-  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.1);
-}
-
-window.tv-manager-window .tm-light.idle .st {
-  color: @theme_text_tertiary;
-}
-
-window.tv-manager-window .tm-light.bad {
-  background: alpha(@theme_danger, 0.1);
-  box-shadow: inset 0 0 0 1px alpha(@theme_danger, 0.28);
-}
-
-window.tv-manager-window .tm-light.bad .st {
-  color: @theme_danger;
-}
-
-window.tv-manager-window .tm-light .light-title {
-  font-size: 1.05em;
-  font-weight: 600;
-}
-
-window.tv-manager-window .tm-light .light-sub {
-  color: @theme_dim_text;
-  font-size: 0.9em;
-}
-
-/* Snapshot filmstrip (Restore A) */
-window.tv-manager-window .tm-film .strip {
-  padding: 18px 22px;
-  border-bottom: 1px solid alpha(@theme_text, 0.1);
-}
-
-window.tv-manager-window .tm-film .shot {
-  min-width: 200px;
-  border-radius: 12px;
-  background: @theme_card;
-  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.1);
-  padding: 12px;
-}
-
-window.tv-manager-window .tm-film .shot.sel {
-  box-shadow: inset 0 0 0 1.5px alpha(@theme_accent, 0.55);
-}
-
-window.tv-manager-window .tm-film .shot.dim {
-  opacity: 0.45;
-}
-
-window.tv-manager-window .tm-film .shot .preview {
-  min-height: 100px;
-  border-radius: 8px;
-  background: shade(@theme_bg, 0.75);
-  color: @theme_dim_text;
-  font-size: 0.85em;
-  padding: 8px;
-}
-
-window.tv-manager-window .tm-film .detail {
-  padding: 22px;
-}
-
-window.tv-manager-window .tm-film .detail .detail-title {
-  font-size: 1.35em;
-  font-weight: 600;
-}
-
-/* Incident (Repair A) */
-window.tv-manager-window .tm-incident {
-  padding: 32px 28px;
-}
-
-window.tv-manager-window .tm-incident .badge {
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 0.75em;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  background: alpha(@theme_danger, 0.14);
-  color: @theme_danger;
-}
-
-window.tv-manager-window .tm-incident .badge.ok {
-  background: alpha(@theme_success, 0.14);
-  color: @theme_success;
-}
-
-window.tv-manager-window .tm-incident .badge.wait {
-  background: alpha(@theme_warning, 0.14);
-  color: @theme_warning;
-}
-
-window.tv-manager-window .tm-incident .incident-title {
-  font-size: 1.7em;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
-}
-
-window.tv-manager-window .tm-incident .lede {
-  color: @theme_dim_text;
-  line-height: 1.45;
-}
-
-window.tv-manager-window .tm-incident .findings {
-  border-radius: 10px;
-  background: @theme_card;
-  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.1);
-  padding: 12px 14px;
-}
-
-window.tv-manager-window .tm-incident .check {
-  padding: 8px 0;
-  border-bottom: 1px solid alpha(@theme_text, 0.08);
-  font-size: 0.95em;
-}
-
-window.tv-manager-window .tm-incident .check:last-child {
-  border-bottom: none;
-}
-
-/* Backup library (Backups A) */
-window.tv-manager-window .tm-lib {
-  padding: 18px 22px;
-}
-
-window.tv-manager-window .tm-file {
-  border-radius: 12px;
-  background: @theme_card;
-  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.1);
-  padding: 14px;
-  min-height: 130px;
-  min-width: 180px;
-}
-
-window.tv-manager-window .tm-file.note {
-  box-shadow: inset 0 0 0 1px alpha(@theme_accent, 0.35);
-}
-
-window.tv-manager-window .tm-file .ic {
+/* ---------- Pairing ---------- */
+window.tv-manager-window entry.pair-digit {
   min-width: 36px;
-  min-height: 36px;
-  border-radius: 10px;
-  background: alpha(@theme_accent, 0.12);
-  color: @theme_accent;
-}
-
-window.tv-manager-window .tm-file .ic image {
-  color: @theme_accent;
-}
-
-window.tv-manager-window .tm-file .file-sub {
-  color: @theme_dim_text;
-  font-size: 0.9em;
-}
-
-/* Observatory (Diagnostics A) */
-window.tv-manager-window .tm-obs .charts {
-  padding: 16px 18px;
-}
-
-window.tv-manager-window .tm-obs .chart {
-  border-radius: 12px;
-  background: @theme_card;
-  box-shadow: inset 0 0 0 1px alpha(@theme_text, 0.1);
-  padding: 12px 14px;
-  min-width: 200px;
-  min-height: 100px;
-}
-
-window.tv-manager-window .tm-obs .chart .k {
-  font-size: 0.75em;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: @theme_text_tertiary;
-  font-weight: 600;
-}
-
-window.tv-manager-window .tm-obs .chart .v {
-  font-size: 1.6em;
-  font-weight: 600;
-  font-feature-settings: "tnum";
-}
-
-window.tv-manager-window .tm-obs .drawer {
-  border-top: 1px solid alpha(@theme_text, 0.1);
-  background: shade(@theme_bg, 0.85);
-  padding: 10px 16px;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 11.5px;
-  line-height: 1.55;
-  color: @theme_dim_text;
-  min-height: 140px;
-}
-
-/* Debloat: full-height list + sticky footer */
-window.tv-manager-window .tm-deb {
-  min-height: 0;
-}
-
-window.tv-manager-window .tm-deb-status {
-  padding: 48px 32px;
-}
-
-window.tv-manager-window .tm-deb-status .status-title {
-  font-size: 1.25em;
-  font-weight: 600;
-}
-
-window.tv-manager-window .tm-deb-status .status-sub {
-  color: @theme_dim_text;
-  font-size: 0.95em;
-}
-
-window.tv-manager-window .tm-deb-content {
-  min-height: 0;
-}
-
-window.tv-manager-window .tm-deb-scroll {
-  min-height: 0;
-  border-bottom: 1px solid alpha(@theme_text, 0.1);
-}
-
-window.tv-manager-window .tm-deb .grp {
-  padding: 14px 18px 6px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: @theme_text_tertiary;
-  background: alpha(@theme_text, 0.03);
-}
-
-window.tv-manager-window .tm-deb .pkg {
-  padding: 8px 18px;
-  border-bottom: 1px solid alpha(@theme_text, 0.06);
   min-height: 44px;
-}
-
-window.tv-manager-window .tm-deb .pkg.dim {
-  opacity: 0.45;
-}
-
-window.tv-manager-window .tm-deb .pkg .pkg-title {
+  padding: 0;
+  font-size: 1.3em;
   font-weight: 600;
-}
-
-window.tv-manager-window .tm-deb .pkg .pkg-id {
-  color: @theme_dim_text;
-  font-size: 0.82em;
-  font-family: "JetBrains Mono", monospace;
-}
-
-window.tv-manager-window .tm-deb-bar {
-  padding: 12px 18px;
-  background: alpha(@theme_bg, 0.92);
-  min-height: 56px;
-}
-
-window.tv-manager-window .tm-deb-bar .bar-k {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: @theme_text_tertiary;
-}
-
-window.tv-manager-window .tm-deb-bar .will {
-  font-size: 0.92em;
-  color: @theme_dim_text;
+  border-radius: var(--nyx-radius-small);
+  background: @field;
 }

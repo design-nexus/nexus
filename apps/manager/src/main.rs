@@ -1,9 +1,15 @@
 //! TV Manager — install and manage Nyx TV on Android TVs over adb.
 
-mod add;
+mod actions;
+mod activity;
 mod devices;
+mod ops;
+mod page;
+mod pages;
 mod prefs;
 mod settings;
+mod state;
+mod sync;
 mod theme;
 mod window;
 
