@@ -221,7 +221,8 @@ class PlexServerClient(
             if (start < 0) return@mapNotNull null
             Chapter(c.optString("tag").ifEmpty { "Chapter" }, start)
         }
-        return PlayInfo(item = item, markers = markers, audioTracks = audio, subtitleTracks = subs, chapters = chapters, next = nextEpisode(item, meta))
+        val (prev, next) = adjacentEpisodes(item, meta)
+        return PlayInfo(item = item, markers = markers, audioTracks = audio, subtitleTracks = subs, chapters = chapters, next = next, previous = prev)
     }
 
     /**
@@ -279,17 +280,26 @@ class PlexServerClient(
         }
     }
 
-    private fun nextEpisode(item: MediaItem, meta: JSONObject): MediaItem? {
-        if (item.kind != MediaKind.EPISODE) return null
-        val seasonId = item.parentId ?: return null
+    private fun adjacentEpisodes(item: MediaItem, meta: JSONObject): Pair<MediaItem?, MediaItem?> {
+        if (item.kind != MediaKind.EPISODE) return null to null
+        val seasonId = item.parentId ?: return null to null
         val siblings = try { children(item.copy(id = seasonId, kind = MediaKind.SEASON)) } catch (_: Exception) { emptyList() }
         val idx = siblings.indexOfFirst { it.id == item.id }
-        if (idx >= 0 && idx + 1 < siblings.size) return siblings[idx + 1]
-        val showId = item.seriesId ?: meta.opt("grandparentRatingKey")?.toString()?.takeIf { isDigits(it) } ?: return null
+        var prev: MediaItem? = if (idx > 0) siblings[idx - 1] else null
+        var next: MediaItem? = if (idx >= 0 && idx + 1 < siblings.size) siblings[idx + 1] else null
+        if (prev != null && next != null) return prev to next
+
+        val showId = item.seriesId ?: meta.opt("grandparentRatingKey")?.toString()?.takeIf { isDigits(it) } ?: return prev to next
         val seasons = try { children(MediaItem(ref, showId, MediaKind.SHOW, title = "")) } catch (_: Exception) { emptyList() }
         val si = seasons.indexOfFirst { it.id == seasonId }
-        if (si < 0 || si + 1 >= seasons.size) return null
-        return try { children(seasons[si + 1]).firstOrNull() } catch (_: Exception) { null }
+        if (si < 0) return prev to next
+        if (prev == null && si > 0) {
+            prev = try { children(seasons[si - 1]).lastOrNull() } catch (_: Exception) { null }
+        }
+        if (next == null && si + 1 < seasons.size) {
+            next = try { children(seasons[si + 1]).firstOrNull() } catch (_: Exception) { null }
+        }
+        return prev to next
     }
 
     fun timeline(update: TimelineUpdate) {

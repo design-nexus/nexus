@@ -101,6 +101,8 @@ class PlayerActivity : Activity() {
     private lateinit var scrubKnob: View
     private lateinit var introBand: View
     private lateinit var creditsBand: View
+    private lateinit var prevEpBtn: ImageView
+    private lateinit var nextEpBtn: ImageView
     private lateinit var subsBtn: ImageView
     private lateinit var settingsBtn: ImageView
     private lateinit var bottomChrome: LinearLayout
@@ -290,6 +292,8 @@ class PlayerActivity : Activity() {
         cancelAutoSkip()
         cancelUpNext(startNext = false)
         skipBand.visibility = View.GONE
+        prevEpBtn.visibility = View.GONE
+        nextEpBtn.visibility = View.GONE
         topTitle.text = intent.getStringExtra(EXTRA_TITLE).orEmpty()
         topMeta.text = ""
         showChrome(focusScrubber = true)
@@ -337,12 +341,20 @@ class PlayerActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END
         }
+        prevEpBtn = squareIcon(R.drawable.ic_prev_ep, "Previous episode") { playPrevious() }.apply {
+            visibility = View.GONE
+        }
+        nextEpBtn = squareIcon(R.drawable.ic_next_ep, "Next episode") { playNext() }.apply {
+            visibility = View.GONE
+        }
         subsBtn = squareIcon(R.drawable.ic_cc, "Subtitles") { menuFromSettings = false; openMenu(Menu.SUBS) }
         settingsBtn = squareIcon(R.drawable.ic_gear, "Settings") {
             menuFromSettings = false
             settingsFocusIndex = 4
             openMenu(Menu.SETTINGS)
         }
+        actions.addView(prevEpBtn, llp(dp(40), dp(40)) { marginEnd = dp(10) })
+        actions.addView(nextEpBtn, llp(dp(40), dp(40)) { marginEnd = dp(10) })
         actions.addView(subsBtn, llp(dp(40), dp(40)) { marginEnd = dp(10) })
         actions.addView(settingsBtn, llp(dp(40), dp(40)))
         bottomChrome.addView(actions, llp(MATCH_PARENT, WRAP) { bottomMargin = dp(12) })
@@ -504,6 +516,8 @@ class PlayerActivity : Activity() {
                 if (durationHint <= 0) durationHint = i.item.durationMs
                 audioId = i.audioTracks.firstOrNull { it.selected }?.id ?: i.audioTracks.firstOrNull()?.id
                 subtitleId = i.subtitleTracks.firstOrNull { it.selected }?.id
+                prevEpBtn.visibility = if (i.previous != null) View.VISIBLE else View.GONE
+                nextEpBtn.visibility = if (i.next != null) View.VISIBLE else View.GONE
                 scrubShell.post { layoutMarkerBands() }
                 startStream(if (forceTranscode || !prefs.preferDirectPlay) StreamMode.TRANSCODE else StreamMode.DIRECT)
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -679,8 +693,9 @@ class PlayerActivity : Activity() {
         val markers = info?.markers.orEmpty()
         val intro = markers.firstOrNull { it.kind == MarkerKind.INTRO && pos in it.startMs until it.endMs }
         val credits = markers.firstOrNull { it.kind == MarkerKind.CREDITS && pos in it.startMs until it.endMs }
+        val hasCreditsMarker = markers.any { it.kind == MarkerKind.CREDITS && it.endMs > it.startMs }
         val dur = (source?.durationMs ?: durationHint).coerceAtLeast(1)
-        val nearEnd = pos > dur * 0.92
+        val nearEnd = !hasCreditsMarker && dur > 30_000L && pos >= dur - 15_000L
         val showUpNext = prefs.autoplayNext && info?.next != null && (credits != null || nearEnd) && !dismissedUpNext
         if (showUpNext) {
             cancelAutoSkip()
@@ -997,14 +1012,23 @@ class PlayerActivity : Activity() {
 
     private fun trimSpeed(s: Float) = if (s == s.toInt().toFloat()) "${s.toInt()}×" else "${s}×"
 
+    private fun playPrevious() {
+        val prev = info?.previous ?: return
+        playEpisode(prev)
+    }
+
     private fun playNext() {
         val next = info?.next ?: return
+        playEpisode(next)
+    }
+
+    private fun playEpisode(ep: MediaItem) {
         ending = true
         val intent = Intent(this, PlayerActivity::class.java)
-            .putExtra(EXTRA_ITEM_ID, next.id)
-            .putExtra(EXTRA_TITLE, listOfNotNull(next.seriesTitle, next.episodeCode ?: next.title).joinToString(" · "))
+            .putExtra(EXTRA_ITEM_ID, ep.id)
+            .putExtra(EXTRA_TITLE, listOfNotNull(ep.seriesTitle, ep.episodeCode ?: ep.title).joinToString(" · "))
             .putExtra(EXTRA_RESUME_MS, 0L)
-            .putExtra(EXTRA_DURATION_MS, next.durationMs)
+            .putExtra(EXTRA_DURATION_MS, ep.durationMs)
         startActivity(intent)
     }
 
@@ -1265,6 +1289,8 @@ class PlayerActivity : Activity() {
         updateOverlayPositions()
         // Drop focus out of chrome so Android won't restore it onto Settings when shown again.
         scrubShell.clearFocus()
+        prevEpBtn.clearFocus()
+        nextEpBtn.clearFocus()
         subsBtn.clearFocus()
         settingsBtn.clearFocus()
         chrome.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
@@ -1290,7 +1316,7 @@ class PlayerActivity : Activity() {
 
     private fun onActionRow(): Boolean {
         val f = currentFocus ?: return false
-        return f === subsBtn || f === settingsBtn
+        return f === prevEpBtn || f === nextEpBtn || f === subsBtn || f === settingsBtn
     }
 
     private fun onSkipBand(): Boolean {
@@ -1484,6 +1510,8 @@ class PlayerActivity : Activity() {
                 }
                 KeyEvent.KEYCODE_MEDIA_REWIND -> { seekBy(-30_000); return true }
                 KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { seekBy(30_000); return true }
+                KeyEvent.KEYCODE_MEDIA_PREVIOUS -> { playPrevious(); return true }
+                KeyEvent.KEYCODE_MEDIA_NEXT -> { playNext(); return true }
                 KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_INFO -> {
                     showChrome(focusScrubber = true); openMenu(Menu.SETTINGS); return true
                 }
@@ -1499,6 +1527,8 @@ class PlayerActivity : Activity() {
             KeyEvent.KEYCODE_MEDIA_PAUSE -> { player?.pause(); showChrome(); return true }
             KeyEvent.KEYCODE_MEDIA_REWIND -> { seekBy(seekStep(false, event)); return true }
             KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { seekBy(seekStep(true, event)); return true }
+            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> { playPrevious(); return true }
+            KeyEvent.KEYCODE_MEDIA_NEXT -> { playNext(); return true }
             KeyEvent.KEYCODE_DPAD_LEFT -> {
                 if (onScrubber()) { seekBy(seekStep(false, event)); return true }
                 if (currentFocus === nextBtn && skipBtn.visibility == View.VISIBLE) {

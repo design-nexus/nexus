@@ -109,4 +109,6 @@ data class PlayInfo(
     val chapters: List<Chapter> = emptyList(),
     /** Next episode when this item is an episode; null for movies or the last episode. */
     val next: MediaItem? = null,
+    /** Previous episode when this item is an episode; null for movies or the first episode. */
+    val previous: MediaItem? = null,
 )
