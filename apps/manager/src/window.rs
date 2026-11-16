@@ -35,6 +35,7 @@ struct State {
     verify_has_run: bool,
     overview: Option<Overview>,
     online: bool,
+    adb_online: std::collections::HashSet<String>,
     /// Recent local actions: (time, text, extra)
     activity: Vec<(String, String, String)>,
 }
@@ -177,6 +178,7 @@ pub fn build(app: &gtk::Application) {
         verify_has_run: false,
         overview: None,
         online: false,
+        adb_online: std::collections::HashSet::new(),
         activity: Vec::new(),
     }));
 
@@ -938,8 +940,9 @@ fn refresh_install_on_tv() {
         match overview.as_ref() {
             Some(o) if o.nyx_package.is_some() => {
                 let ver = o.nyx_version.as_deref().unwrap_or("installed");
+                let escaped = glib::markup_escape_text(ver);
                 ui.install_on_title
-                    .set_markup(&format!("<b>{ver}</b>"));
+                    .set_markup(&format!("<b>{escaped}</b>"));
                 ui.install_on_sub.set_text(&format!(
                     "On this TV · {}",
                     o.nyx_package.as_deref().unwrap_or("Nyx TV")
@@ -1017,16 +1020,19 @@ fn apply_install_detail(ui: &Ui) {
                     &[&b1, &b2, &b3, &b4],
                 );
                 let label = if on_ver.is_some() {
-                    "Update this TV"
+                    "Update Nyx TV"
                 } else {
-                    "Install on this TV"
+                    "Install Nyx TV"
                 };
                 let update = gtk::Button::with_label(label);
                 update.add_css_class("suggested-action");
                 update.connect_clicked(move |_| {
                     let p = path.clone();
-                    run_tv_op("Install release APK", move |tv| {
+                    run_tv_op("Install Nyx TV", move |tv| {
                         tv.install_apk(&p, true)?;
+                        if tv.has_package(NYX_TV_PKG_DEBUG).unwrap_or(false) {
+                            let _ = tv.uninstall_package(NYX_TV_PKG_DEBUG, true);
+                        }
                         let msg = format!("Installed {}", p.display());
                         glib::idle_add_once(|| {
                             push_activity("Installed Nyx TV release", "");
@@ -1035,13 +1041,49 @@ fn apply_install_detail(ui: &Ui) {
                     });
                 });
                 ui.install_acts.append(&update);
+
+                let set_home = gtk::Button::with_label("Set as Home & Disable Google TV");
+                set_home.connect_clicked(|_| {
+                    run_tv_op("Set Nyx TV as Home", setup_tv_all_in_one);
+                });
+                ui.install_acts.append(&set_home);
+
+                let rebuild = gtk::Button::with_label("Rebuild release APK");
+                rebuild.add_css_class("flat");
+                rebuild.connect_clicked(|_| {
+                    run_op("Rebuild release APK", || {
+                        let p = nyx_tv_device::build_release_apk(&devices::repo_root())?;
+                        glib::idle_add_once(|| {
+                            refresh_install_apks();
+                            push_activity("Built release APK", "");
+                        });
+                        Ok(format!("Built {}", p.display()))
+                    });
+                });
+                ui.install_acts.append(&rebuild);
+
+                if overview
+                    .as_ref()
+                    .and_then(|o| o.nyx_package.as_deref())
+                    == Some(NYX_TV_PKG_DEBUG)
+                {
+                    let rm_dbg = gtk::Button::with_label("Remove debug build");
+                    rm_dbg.add_css_class("flat");
+                    rm_dbg.connect_clicked(|_| {
+                        run_tv_op("Remove debug build", |tv| {
+                            tv.uninstall_package(NYX_TV_PKG_DEBUG, true)?;
+                            Ok("Removed debug build".into())
+                        });
+                    });
+                    ui.install_acts.append(&rm_dbg);
+                }
             } else if let Some(path) = ui.install_debug.clone() {
                 let info = apk_info(&path);
                 ui.install_eyebrow.set_text("Debug build");
                 ui.install_title
                     .set_text(&format!("Nyx TV {} (debug)", info.version_name));
                 ui.install_sub.set_text(
-                    "No release APK in this checkout — this is the debug package id.",
+                    "No release APK in this checkout yet — build release or install debug.",
                 );
                 let pkg = info
                     .package_id
@@ -1055,8 +1097,14 @@ fn apply_install_detail(ui: &Ui) {
                     "This APK",
                     &[&b1, &b2, &b3],
                 );
+                let build_install = gtk::Button::with_label("Build & Install Nyx TV");
+                build_install.add_css_class("suggested-action");
+                build_install.connect_clicked(|_| {
+                    run_tv_op("Build & Install Nyx TV", install_or_build_release);
+                });
+                ui.install_acts.append(&build_install);
+
                 let install = gtk::Button::with_label("Install debug APK");
-                install.add_css_class("suggested-action");
                 install.connect_clicked(move |_| {
                     let p = path.clone();
                     run_tv_op("Install debug APK", move |tv| {
@@ -1071,20 +1119,26 @@ fn apply_install_detail(ui: &Ui) {
                 ui.install_acts.append(&install);
             } else {
                 ui.install_eyebrow.set_text("No local APK");
-                ui.install_title.set_text("Build an APK first");
+                ui.install_title.set_text("Build release APK");
                 ui.install_sub.set_text(
-                    "No release or debug APK in this checkout. Build one, or pick a file.",
+                    "No release APK in this checkout yet. Click Build & Install Nyx TV or pick a file.",
                 );
                 fill_install_bullets(
                     &ui.install_changes,
                     "Next",
                     &[
-                        "cd android && ./gradlew :app:assembleRelease",
+                        "Build & Install Nyx TV runs Gradle release build and installs it",
                         "Or choose From a file… for an APK you already have",
                     ],
                 );
+                let build_install = gtk::Button::with_label("Build & Install Nyx TV");
+                build_install.add_css_class("suggested-action");
+                build_install.connect_clicked(|_| {
+                    run_tv_op("Build & Install Nyx TV", install_or_build_release);
+                });
+                ui.install_acts.append(&build_install);
+
                 let pick = gtk::Button::with_label("Choose file…");
-                pick.add_css_class("suggested-action");
                 pick.connect_clicked(|_| pick_apk_and_install());
                 ui.install_acts.append(&pick);
             }
@@ -1114,8 +1168,18 @@ fn apply_install_detail(ui: &Ui) {
                         },
                     ],
                 );
+                if !o.nyx_is_home() || !o.stock_disabled() {
+                    let set_home = gtk::Button::with_label("Set as Home & Disable Google TV");
+                    set_home.add_css_class("suggested-action");
+                    set_home.connect_clicked(|_| {
+                        run_tv_op("Set Nyx TV as Home", setup_tv_all_in_one);
+                    });
+                    ui.install_acts.append(&set_home);
+                }
                 let uninstall = uninstall_button();
-                uninstall.add_css_class("suggested-action");
+                if o.nyx_is_home() && o.stock_disabled() {
+                    uninstall.add_css_class("suggested-action");
+                }
                 ui.install_acts.append(&uninstall);
             }
             Some(_) => {
@@ -1395,7 +1459,7 @@ fn launcher_hub() -> (gtk::Box, gtk::Label, gtk::Label, gtk::Button) {
     goal_l.set_halign(gtk::Align::Center);
     let goal_t = w::label("Nyx TV home", "node-title");
     goal_t.set_halign(gtk::Align::Center);
-    let goal_s = w::label("Stock restorable", "dim2");
+    let goal_s = w::label("Google TV Home disabled", "dim2");
     goal_s.set_halign(gtk::Align::Center);
     goal.append(&goal_l);
     goal.append(&goal_t);
@@ -1406,7 +1470,7 @@ fn launcher_hub() -> (gtk::Box, gtk::Label, gtk::Label, gtk::Button) {
     map.append(&goal);
     col.append(&map);
 
-    let primary = gtk::Button::with_label("Set Nyx TV as home");
+    let primary = gtk::Button::with_label("Switch to Nyx TV & Disable Google TV Home");
     primary.add_css_class("suggested-action");
     primary.set_halign(gtk::Align::Center);
     primary.connect_clicked(|_| hub_primary_clicked());
@@ -1417,11 +1481,7 @@ fn launcher_hub() -> (gtk::Box, gtk::Label, gtk::Label, gtk::Button) {
     ops.set_halign(gtk::Align::Center);
     ops.set_hexpand(true);
 
-    for (title, sub, view, icon) in [
-        ("Verify", "Home button, restart, apps", "verify", "emblem-ok-symbolic"),
-        ("Restore", "Google TV from a snapshot", "restore", "edit-undo-symbolic"),
-        ("Repair", "After a firmware update", "repair", "applications-system-symbolic"),
-    ] {
+    let add_card = |title: &str, sub: &str, icon: &str, buttons: Vec<gtk::Button>| {
         let card = gtk::Box::new(gtk::Orientation::Vertical, 6);
         card.add_css_class("op-card");
         card.set_hexpand(true);
@@ -1430,7 +1490,7 @@ fn launcher_hub() -> (gtk::Box, gtk::Label, gtk::Label, gtk::Button) {
         img.set_pixel_size(16);
         head.append(&img);
         let t = gtk::Label::new(Some(title));
-        t.set_markup(&format!("<b>{title}</b>"));
+        t.set_markup(&format!("<b>{}</b>", glib::markup_escape_text(title)));
         t.set_xalign(0.0);
         head.append(&t);
         card.append(&head);
@@ -1439,12 +1499,64 @@ fn launcher_hub() -> (gtk::Box, gtk::Label, gtk::Label, gtk::Button) {
         s.set_wrap(true);
         s.set_vexpand(true);
         card.append(&s);
-        let open = gtk::Button::with_label("Open");
-        let v = view.to_string();
-        open.connect_clicked(move |_| show_launcher_view(&v));
-        card.append(&open);
+        let btn_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        for b in buttons {
+            b.set_hexpand(true);
+            btn_row.append(&b);
+        }
+        card.append(&btn_row);
         ops.append(&card);
-    }
+    };
+
+    let disable_btn = gtk::Button::with_label("Disable Google TV");
+    disable_btn.connect_clicked(|_| {
+        run_tv_op("Disable Google TV Home", |tv| {
+            tv.disable_stock(true)?;
+            Ok("Disabled Google TV Home".into())
+        });
+    });
+    let enable_btn = gtk::Button::with_label("Re-enable");
+    enable_btn.add_css_class("flat");
+    enable_btn.connect_clicked(|_| {
+        run_tv_op("Re-enable Google TV Home", |tv| {
+            tv.enable_stock(true)?;
+            Ok("Re-enabled Google TV Home".into())
+        });
+    });
+    add_card(
+        "Google TV Home",
+        "Disable stock launcher so Home always opens Nyx TV, or re-enable it.",
+        "preferences-system-symbolic",
+        vec![disable_btn, enable_btn],
+    );
+
+    let undo_btn = gtk::Button::with_label("Undo to Google TV");
+    undo_btn.connect_clicked(|_| {
+        run_tv_op("Restore Google TV Home", undo_launcher_setup);
+    });
+    add_card(
+        "Undo Setup",
+        "Re-enable Google TV Home and restore it as your default launcher.",
+        "edit-undo-symbolic",
+        vec![undo_btn],
+    );
+
+    let verify_btn = gtk::Button::with_label("Test TV");
+    verify_btn.connect_clicked(|_| {
+        show_launcher_view("verify");
+    });
+    let snaps_btn = gtk::Button::with_label("Snapshots");
+    snaps_btn.add_css_class("flat");
+    snaps_btn.connect_clicked(|_| {
+        show_launcher_view("restore");
+    });
+    add_card(
+        "Test & Snapshots",
+        "Verify the Home button and apps, or restore an older snapshot.",
+        "emblem-ok-symbolic",
+        vec![verify_btn, snaps_btn],
+    );
+
     col.append(&ops);
 
     (col, hub_now_title, hub_now_sub, primary)
@@ -1455,8 +1567,9 @@ fn hub_primary_clicked() {
     match mode {
         OverviewMode::Empty => show_section("add"),
         OverviewMode::Offline => refresh_overview(),
-        OverviewMode::NotInstalled => show_section("install"),
-        OverviewMode::SetHome => show_launcher_view("replace"),
+        OverviewMode::NotInstalled | OverviewMode::SetHome => {
+            run_tv_op("Set Up Nyx TV as Home", setup_tv_all_in_one);
+        }
         OverviewMode::AllGood => show_launcher_view("verify"),
     }
 }
@@ -2641,19 +2754,31 @@ fn refresh_page_bar() {
 }
 
 fn refresh_tv_list() {
-    let adb_online: std::collections::HashSet<String> = Adb::devices()
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|d| d.state == "device")
-        .map(|d| d.serial)
-        .collect();
+    render_tv_list();
+    std::thread::spawn(|| {
+        let adb_online: std::collections::HashSet<String> = Adb::devices()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|d| d.state == "device")
+            .map(|d| d.serial)
+            .collect();
+        glib::idle_add_once(move || {
+            let _ = with_ui(|ui| {
+                ui.state.borrow_mut().adb_online = adb_online;
+            });
+            render_tv_list();
+        });
+    });
+}
 
+fn render_tv_list() {
     let _ = with_ui_mut(|ui| {
         while let Some(c) = ui.tv_box.first_child() {
             ui.tv_box.remove(&c);
         }
         let devices = ui.state.borrow().devices.devices.clone();
         let selected = ui.state.borrow().selected.clone();
+        let adb_online = ui.state.borrow().adb_online.clone();
         // Mockup: TV row is .active only when a TV section is open — not on Add.
         let section = ui.state.borrow().section.clone();
         let mark_tv_active = section != "add";
@@ -2890,20 +3015,32 @@ fn chrono_ish_now() -> String {
 }
 
 fn overview_primary_clicked() {
-    let mode = with_ui(|ui| overview_mode(ui)).unwrap_or(OverviewMode::Empty);
+    let (mode, stock_disabled) = with_ui(|ui| {
+        let sd = ui
+            .state
+            .borrow()
+            .overview
+            .as_ref()
+            .map(|o| o.stock_disabled())
+            .unwrap_or(false);
+        (overview_mode(ui), sd)
+    })
+    .unwrap_or((OverviewMode::Empty, false));
     match mode {
         OverviewMode::Empty => show_section("add"),
         OverviewMode::Offline => refresh_overview(),
-        OverviewMode::NotInstalled => {
-            show_section("install");
-            if find_local_apk(&devices::repo_root(), false).is_some() {
-                run_tv_op("Install release APK", |tv| install_release_apk(&tv));
-            } else {
-                run_tv_op("Install debug APK", |tv| install_debug_apk(&tv));
-            }
+        OverviewMode::NotInstalled | OverviewMode::SetHome => {
+            run_tv_op("Install & Set Up Nyx TV", setup_tv_all_in_one);
         }
-        OverviewMode::SetHome => show_launcher_view("replace"),
-        OverviewMode::AllGood => show_launcher_view("verify"),
+        OverviewMode::AllGood if !stock_disabled => {
+            run_tv_op("Disable Google TV Home", |tv| {
+                tv.disable_stock(true)?;
+                Ok("Disabled Google TV Home".into())
+            });
+        }
+        OverviewMode::AllGood => {
+            run_tv_op("Update Nyx TV", install_or_build_release);
+        }
     }
 }
 
@@ -2912,11 +3049,10 @@ fn overview_ghost_clicked() {
     match mode {
         OverviewMode::Empty | OverviewMode::Offline => show_section("add"),
         OverviewMode::NotInstalled => show_section("install"),
-        OverviewMode::SetHome => {
-            show_section("launcher");
-            show_launcher_view("verify");
+        OverviewMode::SetHome => show_section("launcher"),
+        OverviewMode::AllGood => {
+            run_tv_op("Restore Google TV Home", undo_launcher_setup);
         }
-        OverviewMode::AllGood => show_section("diagnostics"),
     }
 }
 
@@ -2994,17 +3130,17 @@ fn apply_overview_console(ui: &Ui) {
             let model = o.as_ref().map(|x| x.model.clone()).unwrap_or_default();
             (
                 format!("{nick} · connected"),
-                "Nyx TV isn't installed yet".to_string(),
+                "Ready to install Nyx TV".to_string(),
                 format!(
-                    "{}Install Nyx TV, then set it as the home app.",
+                    "{}One click installs Nyx TV, sets it as your Home app, and disables Google TV Home.",
                     if model.is_empty() {
                         String::new()
                     } else {
                         format!("{model}. ")
                     }
                 ),
-                "Install Nyx TV".to_string(),
-                "Open Install".to_string(),
+                "Install & Set Up Nyx TV".to_string(),
+                "Install Options".to_string(),
                 true,
             )
         }
@@ -3017,10 +3153,10 @@ fn apply_overview_console(ui: &Ui) {
                 format!("{nick} · connected"),
                 "Nyx TV isn't the home app yet".to_string(),
                 format!(
-                    "Nyx TV {ver} is installed. The HOME role still points at Google TV. One step finishes setup."
+                    "Nyx TV {ver} is installed, but Google TV still holds HOME. One click finishes setup and disables Google TV Home."
                 ),
-                "Set Nyx TV as home".to_string(),
-                "Verify first".to_string(),
+                "Switch to Nyx TV & Disable Google TV".to_string(),
+                "Launcher Options".to_string(),
                 true,
             )
         }
@@ -3029,17 +3165,28 @@ fn apply_overview_console(ui: &Ui) {
                 .as_ref()
                 .and_then(|x| x.nyx_version.clone())
                 .unwrap_or_else(|| "installed".to_string());
-            let stock_note = if o.as_ref().map(|x| x.stock_disabled()).unwrap_or(false) {
-                "Google TV home is disabled and can be restored anytime."
+            let stock_disabled = o.as_ref().map(|x| x.stock_disabled()).unwrap_or(false);
+            let (lede, primary) = if stock_disabled {
+                (
+                    format!(
+                        "Nyx TV {ver} is your Home app and Google TV Home is disabled. You can update Nyx TV or undo anytime."
+                    ),
+                    "Update Nyx TV".to_string(),
+                )
             } else {
-                "Google TV home is still enabled — consider disabling stock from Set as home if Home ever opens the wrong app."
+                (
+                    format!(
+                        "Nyx TV {ver} is your Home app, but Google TV Home is still enabled and can take back the Home button."
+                    ),
+                    "Disable Google TV Home".to_string(),
+                )
             };
             (
                 format!("{nick} · connected"),
-                "Nyx TV is the home app".to_string(),
-                format!("Nyx TV {ver} is home. {stock_note}"),
-                "Run verify".to_string(),
-                "Diagnostics".to_string(),
+                "Nyx TV is your Home app".to_string(),
+                lede,
+                primary,
+                "Undo (Google TV Home)".to_string(),
                 true,
             )
         }
@@ -3069,6 +3216,14 @@ fn apply_overview_console(ui: &Ui) {
                 "Home",
                 o.home_label(),
             ));
+            ui.overview_meta.append(&meta_chip(
+                "Google TV Home",
+                if o.stock_disabled() {
+                    "Disabled"
+                } else {
+                    "Enabled"
+                },
+            ));
         }
     }
 
@@ -3080,28 +3235,29 @@ fn apply_overview_console(ui: &Ui) {
                 .as_ref()
                 .map(|x| {
                     if x.stock_disabled() {
-                        "Stock disabled"
+                        "Google TV Home disabled"
                     } else {
-                        "Stock still enabled"
+                        "Google TV Home still enabled"
                     }
                 })
                 .unwrap_or("Connected");
             ui.hub_now_sub.set_text(stock);
-            ui.hub_primary.set_label("Run verify");
+            ui.hub_primary.set_label("Test Home & Apps");
             ui.hub_primary.set_sensitive(true);
             ui.hub_primary.set_visible(true);
         }
         OverviewMode::SetHome => {
             ui.hub_now_title.set_text("Google TV home");
             ui.hub_now_sub.set_text("Nyx TV installed");
-            ui.hub_primary.set_label("Set Nyx TV as home");
+            ui.hub_primary
+                .set_label("Switch to Nyx TV & Disable Google TV Home");
             ui.hub_primary.set_sensitive(true);
             ui.hub_primary.set_visible(true);
         }
         OverviewMode::NotInstalled => {
             ui.hub_now_title.set_text("Google TV home");
             ui.hub_now_sub.set_text("Nyx TV missing");
-            ui.hub_primary.set_label("Install Nyx TV");
+            ui.hub_primary.set_label("Install & Set Up Nyx TV");
             ui.hub_primary.set_sensitive(true);
             ui.hub_primary.set_visible(true);
         }
@@ -3162,13 +3318,21 @@ fn refresh_overview() {
         ui.state.borrow_mut().online = false;
         apply_overview_console(ui);
     });
+    let target_serial = serial.clone();
     let (tx, rx) = async_channel::unbounded::<Result<(Overview, QuickMetrics)>>();
     std::thread::spawn(move || {
         let r = (|| {
-            let listed = Adb::devices().unwrap_or_default();
-            let ready = listed
+            let mut listed = Adb::devices().unwrap_or_default();
+            let mut ready = listed
                 .iter()
                 .any(|d| d.serial == serial && d.state == "device");
+            if !ready && serial.contains(':') {
+                let _ = Adb::connect(&serial);
+                listed = Adb::devices().unwrap_or_default();
+                ready = listed
+                    .iter()
+                    .any(|d| d.serial == serial && d.state == "device");
+            }
             if !ready {
                 anyhow::bail!("TV is offline or not connected over adb");
             }
@@ -3181,11 +3345,21 @@ fn refresh_overview() {
     });
     glib::spawn_future_local(async move {
         if let Ok(r) = rx.recv().await {
+            let still_selected = with_ui(|ui| {
+                ui.state.borrow().selected.as_deref() == Some(target_serial.as_str())
+            })
+            .unwrap_or(false);
+            if !still_selected {
+                return;
+            }
             match r {
                 Ok((o, metrics)) => {
                     let _ = with_ui(|ui| {
-                        ui.state.borrow_mut().overview = Some(o);
-                        ui.state.borrow_mut().online = true;
+                        let mut st = ui.state.borrow_mut();
+                        st.adb_online.insert(target_serial.clone());
+                        st.overview = Some(o);
+                        st.online = true;
+                        drop(st);
                         apply_overview_console(ui);
                     });
                     apply_quick_metrics(&metrics);
@@ -3193,8 +3367,11 @@ fn refresh_overview() {
                 }
                 Err(_) => {
                     let _ = with_ui(|ui| {
-                        ui.state.borrow_mut().online = false;
-                        ui.state.borrow_mut().overview = None;
+                        let mut st = ui.state.borrow_mut();
+                        st.adb_online.remove(&target_serial);
+                        st.online = false;
+                        st.overview = None;
+                        drop(st);
                         apply_overview_console(ui);
                     });
                     set_metrics(false, &["—", "—", "—", "—"], &["", "", "", ""]);
@@ -3274,6 +3451,57 @@ fn snapshot_op(tv: &Tv) -> Result<String> {
     Ok(format!("Saved {path}"))
 }
 
+fn install_or_build_release(tv: Tv) -> Result<String> {
+    install_or_build_release_ref(&tv)
+}
+
+fn install_or_build_release_ref(tv: &Tv) -> Result<String> {
+    let root = devices::repo_root();
+    let (apk, built) = match find_local_apk(&root, false) {
+        Some(p) => (p, false),
+        None => (nyx_tv_device::build_release_apk(&root)?, true),
+    };
+    tv.install_apk(&apk, true)?;
+    if tv.has_package(NYX_TV_PKG_DEBUG).unwrap_or(false) {
+        let _ = tv.uninstall_package(NYX_TV_PKG_DEBUG, true);
+    }
+    glib::idle_add_once(move || {
+        if built {
+            refresh_install_apks();
+        }
+        push_activity("Installed Nyx TV release", "");
+    });
+    Ok(format!("Installed {}", apk.display()))
+}
+
+fn setup_tv_all_in_one(tv: Tv) -> Result<String> {
+    let install_msg = install_or_build_release_ref(&tv)?;
+    let snap = tv.replace_launcher(nyx_tv_device::NYX_TV_HOME, true)?;
+    let path = snap
+        .path
+        .as_ref()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    let snap_clone = snap.clone();
+    glib::idle_add_once(move || {
+        let _ = with_ui(|ui| {
+            ui.state.borrow_mut().last_snapshot = Some(snap_clone);
+        });
+        push_activity("Set up Nyx TV as Home", "");
+    });
+    Ok(format!(
+        "{install_msg}\nSet Nyx TV as Home and disabled Google TV Home.\nSnapshot: {path}"
+    ))
+}
+
+fn undo_launcher_setup(tv: Tv) -> Result<String> {
+    tv.restore_stock_home(true)?;
+    glib::idle_add_once(|| {
+        push_activity("Restored Google TV Home", "");
+    });
+    Ok("Restored Google TV Home".into())
+}
+
 fn replace_launcher(tv: &Tv) -> Result<String> {
     let component = tv.home_component_for_installed()?;
     let snap = tv.replace_launcher(&component, true)?;
@@ -3288,11 +3516,10 @@ fn replace_launcher(tv: &Tv) -> Result<String> {
             ui.state.borrow_mut().last_snapshot = Some(snap_clone);
         });
     });
-    let report = tv.verify(&component)?;
-    let mut out = format!("Snapshot: {path}\n");
-    out.push_str(&report.lines.join("\n"));
-    if !report.ok {
-        anyhow::bail!("{out}\nverify reported failures");
+    let mut out = format!("Switched Home to {component} and disabled Google TV Home.\nSnapshot: {path}");
+    if let Ok(report) = tv.verify(&component) {
+        out.push('\n');
+        out.push_str(&report.lines.join("\n"));
     }
     Ok(out)
 }

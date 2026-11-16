@@ -263,8 +263,18 @@ impl Tv {
         })
     }
 
+    pub fn has_package(&self, pkg: &str) -> Result<bool> {
+        self.package_present(pkg)
+    }
+
     fn nyx_installed(&self) -> Result<(Option<String>, Option<String>)> {
-        for pkg in [NYX_TV_PKG_DEBUG, NYX_TV_PKG] {
+        let home = self.home_now().unwrap_or_default();
+        let order = if home.starts_with(&format!("{NYX_TV_PKG_DEBUG}/")) {
+            [NYX_TV_PKG_DEBUG, NYX_TV_PKG]
+        } else {
+            [NYX_TV_PKG, NYX_TV_PKG_DEBUG]
+        };
+        for pkg in order {
             let path = self.adb.shell_ok(&["pm", "path", pkg])?;
             if path.contains("package:") {
                 let dump = self.adb.shell_ok(&["dumpsys", "package", pkg])?;
@@ -457,6 +467,28 @@ impl Tv {
         Ok(())
     }
 
+    /// Re-enable Google TV launcherx and setupwraith (when present).
+    pub fn enable_stock(&self, confirm: bool) -> Result<()> {
+        if !confirm {
+            bail!("enable_stock refused: confirm was false");
+        }
+        if self.package_present(SETUPWRAITH)? {
+            self.adb.shell(&["pm", "enable", SETUPWRAITH])?;
+        }
+        if self.package_present(STOCK_LAUNCHER)? {
+            self.adb.shell(&["pm", "enable", STOCK_LAUNCHER])?;
+        }
+        Ok(())
+    }
+
+    /// Re-enable stock packages and set Google TV Home back as default (even without a snapshot).
+    pub fn restore_stock_home(&self, confirm: bool) -> Result<()> {
+        self.enable_stock(confirm)?;
+        self.set_home(STOCK_HOME)?;
+        let _ = self.adb.shell(&["am", "start", "-n", STOCK_HOME]);
+        Ok(())
+    }
+
     /// Re-enable stock packages and restore the saved home from a snapshot.
     pub fn restore(&self, snap: &Snapshot, confirm: bool) -> Result<()> {
         if !confirm {
@@ -475,6 +507,7 @@ impl Tv {
             snap.home.as_str()
         };
         self.set_home(home)?;
+        let _ = self.adb.shell(&["am", "start", "-n", home]);
         Ok(())
     }
 
@@ -576,7 +609,7 @@ impl Tv {
         Ok(String::new())
     }
 
-    /// Full replace flow: snapshot, set-home, disable-stock. Caller should verify after.
+    /// Full replace flow: snapshot, set-home, disable-stock, and launch Nyx TV.
     pub fn replace_launcher(&self, component: &str, confirm: bool) -> Result<Snapshot> {
         if !confirm {
             bail!("replace_launcher refused: confirm was false");
@@ -584,6 +617,7 @@ impl Tv {
         let snap = self.snapshot()?;
         self.set_home(component)?;
         self.disable_stock(true)?;
+        let _ = self.adb.shell(&["am", "start", "-n", component]);
         Ok(snap)
     }
 
@@ -1138,6 +1172,36 @@ pub fn find_local_apk(repo: &Path, debug: bool) -> Option<PathBuf> {
             .join(name),
     ];
     candidates.into_iter().find(|p| p.is_file())
+}
+
+/// Build the Android release APK using `./gradlew :app:assembleRelease`.
+pub fn build_release_apk(repo: &Path) -> Result<PathBuf> {
+    let android_dir = repo.join("android");
+    let gradlew = android_dir.join("gradlew");
+    if !gradlew.is_file() {
+        bail!("Gradle wrapper not found at {}", gradlew.display());
+    }
+    let out = std::process::Command::new(&gradlew)
+        .current_dir(&android_dir)
+        .args([":app:assembleRelease", "--console=plain"])
+        .output()
+        .with_context(|| format!("failed to run {}", gradlew.display()))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let tail: String = stderr
+            .lines()
+            .chain(stdout.lines())
+            .rev()
+            .take(12)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n");
+        bail!("Gradle release build failed:\n{tail}");
+    }
+    find_local_apk(repo, false).ok_or_else(|| anyhow!("Release APK missing after build"))
 }
 
 /// Facts about a local APK for Install and update (version from aapt or Gradle metadata).

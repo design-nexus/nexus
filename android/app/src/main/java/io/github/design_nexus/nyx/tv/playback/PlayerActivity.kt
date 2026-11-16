@@ -114,7 +114,9 @@ class PlayerActivity : Activity() {
     private var chromeVisible = true
     private var triedTranscode = false
     private var ending = false
+    private var needsResumeOnStart = false
     private var startJob: Job? = null
+    private var loadJob: Job? = null
     private var lastTimelineAtMs = 0L
     private var audioId: Int? = null
     private var subtitleId: Int? = null
@@ -160,8 +162,6 @@ class PlayerActivity : Activity() {
         if (itemId.isEmpty() || !itemId.all(Char::isDigit)) {
             toast("Nothing to play"); finish(); return
         }
-        resumeMs = intent.getLongExtra(EXTRA_RESUME_MS, 0L).coerceAtLeast(0)
-        durationHint = intent.getLongExtra(EXTRA_DURATION_MS, 0L)
         delayProcessor = AudioDelayProcessor().apply { delayMs = prefs.audioOffsetMs }
 
         root = FrameLayout(this).apply {
@@ -188,7 +188,46 @@ class PlayerActivity : Activity() {
         root.addView(railHost, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         setContentView(root)
 
+        loadFromIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (!::playerView.isInitialized) return
+        loadFromIntent(intent)
+    }
+
+    private fun loadFromIntent(intent: Intent) {
+        val nextId = intent.getStringExtra(EXTRA_ITEM_ID).orEmpty()
+        if (nextId.isEmpty() || !nextId.all(Char::isDigit)) {
+            toast("Nothing to play"); finish(); return
+        }
+        loadJob?.cancel()
+        startJob?.cancel()
+        main.removeCallbacks(bufferingWatchdog)
+        main.removeCallbacks(transcodeSeekRunnable)
+        main.removeCallbacks(upNextTick)
+        source?.takeIf { it.mode == StreamMode.TRANSCODE }?.let { s ->
+            app.scope.launch { runCatching { app.plex.stopPlaybackSession(s.sessionId) } }
+        }
+        releasePlayer(report = source != null)
+        itemId = nextId
+        resumeMs = intent.getLongExtra(EXTRA_RESUME_MS, 0L).coerceAtLeast(0)
+        durationHint = intent.getLongExtra(EXTRA_DURATION_MS, 0L)
+        source = null
+        info = null
+        triedTranscode = false
+        forceTranscode = false
+        ending = false
+        needsResumeOnStart = false
+        audioId = null
+        subtitleId = null
+        pendingTranscodeMs = -1L
+        upNextSeconds = -1
+        upNextHost?.visibility = View.GONE
         topTitle.text = intent.getStringExtra(EXTRA_TITLE).orEmpty()
+        topMeta.text = ""
         showChrome(focusScrubber = true)
         loadAndPlay()
     }
@@ -386,9 +425,27 @@ class PlayerActivity : Activity() {
         setOnFocusChangeListener { _, f -> paint(f) }
     }
 
+    private val bufferingWatchdog = Runnable {
+        val exo = player ?: return@Runnable
+        val st = source ?: return@Runnable
+        if (exo.playbackState == Player.STATE_BUFFERING && exo.playWhenReady) {
+            android.util.Log.w("NyxPlayer", "buffering timeout mode=${st.mode}")
+            if (st.mode == StreamMode.DIRECT && !triedTranscode) {
+                triedTranscode = true
+                resumeMs = absolutePosition()
+                startStream(StreamMode.TRANSCODE)
+            } else {
+                toast("Stream stalled — retrying")
+                resumeMs = absolutePosition()
+                startStream(st.mode)
+            }
+        }
+    }
+
     private fun loadAndPlay() {
+        loadJob?.cancel()
         spinner.visibility = View.VISIBLE
-        scope.launch {
+        loadJob = scope.launch {
             try {
                 info = withContext(Dispatchers.IO) { app.plex.playInfo(itemId) }
                 val i = info!!
@@ -402,6 +459,8 @@ class PlayerActivity : Activity() {
                 subtitleId = i.subtitleTracks.firstOrNull { it.selected }?.id
                 scrubShell.post { layoutMarkerBands() }
                 startStream(if (forceTranscode || !prefs.preferDirectPlay) StreamMode.TRANSCODE else StreamMode.DIRECT)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 toast(e.message ?: "Couldn't load this title")
                 finish()
@@ -482,12 +541,22 @@ class PlayerActivity : Activity() {
         exo.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 android.util.Log.d("NyxPlayer", "state=$state mode=${stream.mode} playing=${exo.isPlaying}")
-                if (state == Player.STATE_READY) spinner.visibility = View.GONE
-                if (state == Player.STATE_ENDED) onEnded()
+                if (state == Player.STATE_READY) {
+                    spinner.visibility = View.GONE
+                    main.removeCallbacks(bufferingWatchdog)
+                } else if (state == Player.STATE_BUFFERING && exo.playWhenReady) {
+                    main.removeCallbacks(bufferingWatchdog)
+                    main.postDelayed(bufferingWatchdog, BUFFERING_TIMEOUT_MS)
+                }
+                if (state == Player.STATE_ENDED) {
+                    main.removeCallbacks(bufferingWatchdog)
+                    onEnded()
+                }
                 report(if (exo.isPlaying) TimelineState.PLAYING else TimelineState.PAUSED)
             }
             override fun onRenderedFirstFrame() {
                 android.util.Log.d("NyxPlayer", "firstFrame mode=${stream.mode}")
+                main.removeCallbacks(bufferingWatchdog)
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 report(if (isPlaying) TimelineState.PLAYING else TimelineState.PAUSED)
@@ -515,6 +584,8 @@ class PlayerActivity : Activity() {
         exo.prepare()
         if (stream.mode == StreamMode.DIRECT && resumeMs > 0) exo.seekTo(resumeMs)
         exo.playWhenReady = true
+        main.removeCallbacks(bufferingWatchdog)
+        main.postDelayed(bufferingWatchdog, BUFFERING_TIMEOUT_MS)
     }
 
     private val tick = object : Runnable {
@@ -723,13 +794,13 @@ class PlayerActivity : Activity() {
 
     private fun playNext() {
         val next = info?.next ?: return
+        ending = true
         val intent = Intent(this, PlayerActivity::class.java)
             .putExtra(EXTRA_ITEM_ID, next.id)
             .putExtra(EXTRA_TITLE, listOfNotNull(next.seriesTitle, next.episodeCode ?: next.title).joinToString(" · "))
             .putExtra(EXTRA_RESUME_MS, 0L)
             .putExtra(EXTRA_DURATION_MS, next.durationMs)
         startActivity(intent)
-        finishPlayback()
     }
 
     private fun onEnded() {
@@ -1017,6 +1088,7 @@ class PlayerActivity : Activity() {
     }
 
     private fun releasePlayer(report: Boolean) {
+        main.removeCallbacks(bufferingWatchdog)
         if (report) report(TimelineState.STOPPED)
         if (::playerView.isInitialized) playerView.player = null
         player?.release()
@@ -1247,17 +1319,36 @@ class PlayerActivity : Activity() {
         if (::playerView.isInitialized) {
             main.removeCallbacks(tick)
             main.post(tick)
+            if (needsResumeOnStart && !isFinishing && !ending) {
+                needsResumeOnStart = false
+                startStream(if (forceTranscode || !prefs.preferDirectPlay) StreamMode.TRANSCODE else StreamMode.DIRECT)
+            }
         }
     }
 
     override fun onStop() {
         super.onStop()
         main.removeCallbacks(tick)
-        if (!isFinishing) player?.pause()
+        main.removeCallbacks(bufferingWatchdog)
+        if (!isFinishing && !ending) {
+            if (player != null) {
+                resumeMs = absolutePosition()
+            }
+            if (info != null || itemId.isNotEmpty()) {
+                needsResumeOnStart = true
+            }
+            loadJob?.cancel()
+            startJob?.cancel()
+            source?.takeIf { it.mode == StreamMode.TRANSCODE }?.let { s ->
+                app.scope.launch { runCatching { app.plex.stopPlaybackSession(s.sessionId) } }
+            }
+            releasePlayer(report = player != null)
+        }
     }
 
     override fun onDestroy() {
         main.removeCallbacks(tick)
+        main.removeCallbacks(bufferingWatchdog)
         main.removeCallbacks(transcodeSeekRunnable)
         main.removeCallbacks(upNextTick)
         if (!ending) {
@@ -1290,5 +1381,6 @@ class PlayerActivity : Activity() {
         private const val TAG_OPTIONS = "options"
         private const val TAG_OFFSET = "offset"
         private const val UP_NEXT_COUNTDOWN_SEC = 15
+        private const val BUFFERING_TIMEOUT_MS = 15_000L
     }
 }
