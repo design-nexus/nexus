@@ -89,7 +89,8 @@ class DetailsPage(a: HomeActivity, private var item: MediaItem) : Page(a), RowHo
         info.addView(buttons, llp(WRAP, WRAP) { topMargin = a.dp(18) })
         // Season chips sit under Play — never overlaid at a fixed Y that covers the buttons.
         column.addView(info, llp(a.dp(736), WRAP))
-        column.addView(seasonScroll, llp(MATCH, WRAP) { topMargin = a.dp(16) })
+        seasonScroll.clipToPadding = false
+        column.addView(seasonScroll, llp(MATCH, WRAP) { topMargin = a.dp(16); bottomMargin = a.dp(10) })
         list.layoutManager = LinearLayoutManager(a)
         list.adapter = adapter
         list.itemAnimator = null
@@ -110,6 +111,7 @@ class DetailsPage(a: HomeActivity, private var item: MediaItem) : Page(a), RowHo
     override fun onShow() {
         a.paintScrim(full = false)
         a.setBackdrop(item.backdrop)
+        currentSeason?.let { loadEpisodes(it, preserveFocus = true) }
     }
 
     private fun render() {
@@ -220,8 +222,7 @@ class DetailsPage(a: HomeActivity, private var item: MediaItem) : Page(a), RowHo
     private fun buildSeasons() {
         seasons.removeAllViews()
         for (s in seasonItems) {
-            val label = s.title + (s.unwatchedCount?.takeIf { it > 0 }?.let { "  ·  $it new" } ?: "")
-            val c = Chip(a, palette, label, s == currentSeason)
+            val c = Chip(a, palette, s.title, s == currentSeason)
             c.setOnClickListener { currentSeason = s; repaintSeasons(); loadEpisodes(s) }
             c.setOnKeyListener { _, code, e ->
                 if (code == KeyEvent.KEYCODE_DPAD_UP && e.action == KeyEvent.ACTION_DOWN) {
@@ -230,7 +231,7 @@ class DetailsPage(a: HomeActivity, private var item: MediaItem) : Page(a), RowHo
             }
             seasons.addView(c, llp(WRAP, a.dp(28)) { marginStart = a.dp(4); marginEnd = a.dp(4) })
         }
-        seasonScroll.visibility = if (seasonItems.isEmpty()) View.GONE else View.VISIBLE
+        seasonScroll.visibility = if (seasonItems.size <= 1) View.GONE else View.VISIBLE
     }
 
     private fun repaintSeasons() {
@@ -244,14 +245,16 @@ class DetailsPage(a: HomeActivity, private var item: MediaItem) : Page(a), RowHo
         loadEpisodes(s)
     }
 
-    private fun loadEpisodes(s: MediaItem) {
+    private fun loadEpisodes(s: MediaItem, preserveFocus: Boolean = false) {
         episodesJob?.cancel()
         episodesJob = a.scope.launch {
             episodes = runCatching { provider.children(s) }.getOrDefault(emptyList())
             val target = episodes.firstOrNull { it.progress > 0 } ?: episodes.firstOrNull { !it.watched } ?: episodes.firstOrNull()
             if (playTarget == null || item.kind == MediaKind.SEASON || s == currentSeason) playTarget = target
-            val start = episodes.indexOf(target).coerceAtLeast(0)
-            focus.remember("episodes", start)
+            if (!preserveFocus) {
+                val start = episodes.indexOf(target).coerceAtLeast(0)
+                focus.remember("episodes", start)
+            }
             adapter.submit(listOf(RowData("episodes", s.title, CardStyle.LANDSCAPE, episodes.map { Cell.Media(it.copy(seriesTitle = null)) })))
             buildButtons()
         }
