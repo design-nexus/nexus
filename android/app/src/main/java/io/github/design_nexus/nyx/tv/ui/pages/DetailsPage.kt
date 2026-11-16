@@ -181,7 +181,10 @@ class DetailsPage(a: HomeActivity, private var item: MediaItem) : Page(a), RowHo
     }
 
     private fun focusBelow(): Boolean {
-        if (seasons.childCount > 0) { seasons.getChildAt(seasonItems.indexOf(currentSeason).coerceAtLeast(0))?.requestFocus(); return true }
+        if (seasonScroll.visibility == View.VISIBLE && seasons.childCount > 0) {
+            seasons.getChildAt(seasonItems.indexOf(currentSeason).coerceAtLeast(0))?.requestFocus()
+            return true
+        }
         val v = (list.layoutManager as LinearLayoutManager).findViewByPosition(0) as? io.github.design_nexus.nyx.tv.ui.RowView ?: return false
         v.focusRemembered(focus)
         return true
@@ -221,6 +224,10 @@ class DetailsPage(a: HomeActivity, private var item: MediaItem) : Page(a), RowHo
 
     private fun buildSeasons() {
         seasons.removeAllViews()
+        if (seasonItems.size <= 1) {
+            seasonScroll.visibility = View.GONE
+            return
+        }
         for (s in seasonItems) {
             val c = Chip(a, palette, s.title, s == currentSeason)
             c.setOnClickListener { currentSeason = s; repaintSeasons(); loadEpisodes(s) }
@@ -231,7 +238,7 @@ class DetailsPage(a: HomeActivity, private var item: MediaItem) : Page(a), RowHo
             }
             seasons.addView(c, llp(WRAP, a.dp(28)) { marginStart = a.dp(4); marginEnd = a.dp(4) })
         }
-        seasonScroll.visibility = if (seasonItems.size <= 1) View.GONE else View.VISIBLE
+        seasonScroll.visibility = View.VISIBLE
     }
 
     private fun repaintSeasons() {
