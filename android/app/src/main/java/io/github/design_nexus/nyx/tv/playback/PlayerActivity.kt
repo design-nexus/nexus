@@ -541,6 +541,7 @@ class PlayerActivity : Activity() {
         exo.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 android.util.Log.d("NyxPlayer", "state=$state mode=${stream.mode} playing=${exo.isPlaying}")
+                updateKeepScreenOn()
                 if (state == Player.STATE_READY) {
                     spinner.visibility = View.GONE
                     main.removeCallbacks(bufferingWatchdog)
@@ -559,6 +560,7 @@ class PlayerActivity : Activity() {
                 main.removeCallbacks(bufferingWatchdog)
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
+                updateKeepScreenOn()
                 report(if (isPlaying) TimelineState.PLAYING else TimelineState.PAUSED)
                 updatePlayIcon()
                 // Seeking/buffering flickers isPlaying — never pop chrome if the user hid it.
@@ -584,6 +586,7 @@ class PlayerActivity : Activity() {
         exo.prepare()
         if (stream.mode == StreamMode.DIRECT && resumeMs > 0) exo.seekTo(resumeMs)
         exo.playWhenReady = true
+        updateKeepScreenOn()
         main.removeCallbacks(bufferingWatchdog)
         main.postDelayed(bufferingWatchdog, BUFFERING_TIMEOUT_MS)
     }
@@ -1087,12 +1090,26 @@ class PlayerActivity : Activity() {
         finish()
     }
 
+    private fun updateKeepScreenOn() {
+        val exo = player
+        val keepOn = exo != null && exo.playWhenReady &&
+            exo.playbackState != Player.STATE_IDLE &&
+            exo.playbackState != Player.STATE_ENDED
+        if (::playerView.isInitialized) playerView.keepScreenOn = keepOn
+        if (keepOn) {
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
     private fun releasePlayer(report: Boolean) {
         main.removeCallbacks(bufferingWatchdog)
         if (report) report(TimelineState.STOPPED)
         if (::playerView.isInitialized) playerView.player = null
         player?.release()
         player = null
+        updateKeepScreenOn()
     }
 
     /**
