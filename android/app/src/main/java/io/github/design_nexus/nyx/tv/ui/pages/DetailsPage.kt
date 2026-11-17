@@ -192,9 +192,21 @@ class DetailsPage(a: HomeActivity, private var item: MediaItem) : Page(a), RowHo
 
     private fun toggleWatched() {
         val i = item
+        val nextWatched = !i.watched
         a.scope.launch {
-            runCatching { provider.setWatched(i, !i.watched) }
-                .onSuccess { item = i.copy(watched = !i.watched, viewOffsetMs = 0); render() }
+            runCatching { provider.setWatched(i, nextWatched) }
+                .onSuccess {
+                    item = i.copy(watched = nextWatched, viewOffsetMs = 0)
+                    render()
+                    if (i.kind == MediaKind.SHOW || i.kind == MediaKind.SEASON) {
+                        val s = currentSeason
+                        if (s != null) {
+                            episodes = episodes.map { it.copy(watched = nextWatched, viewOffsetMs = 0) }
+                            adapter.submit(listOf(RowData("episodes", s.title, CardStyle.LANDSCAPE, episodes.map { Cell.Media(it.copy(seriesTitle = null)) })))
+                            loadEpisodes(s, preserveFocus = true)
+                        }
+                    }
+                }
                 .onFailure { a.toast("The server couldn't be reached") }
         }
     }

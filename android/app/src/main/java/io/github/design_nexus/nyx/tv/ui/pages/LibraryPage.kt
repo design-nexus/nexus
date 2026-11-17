@@ -66,6 +66,10 @@ class LibraryPage(a: HomeActivity, private val kind: Kind) : Page(a), RowHost {
     override val scope: CoroutineScope get() = a.scope
 
     private val root = object : FrameLayout(a) {
+        init {
+            clipChildren = false
+            clipToPadding = false
+        }
         override fun dispatchKeyEvent(event: KeyEvent): Boolean {
             if (event.action == KeyEvent.ACTION_DOWN) {
                 when (event.keyCode) {
@@ -148,6 +152,7 @@ class LibraryPage(a: HomeActivity, private val kind: Kind) : Page(a), RowHost {
     private var sort = SortOrder.RECENTLY_ADDED
     private val items = ArrayList<MediaItem>()
     private var total = 0
+    private var totalKnown = false
     private var loading: Job? = null
     private var loaded = false
     private var suppressLoadMore = false
@@ -188,7 +193,7 @@ class LibraryPage(a: HomeActivity, private val kind: Kind) : Page(a), RowHost {
                 if (!collectionsMode && lm.findLastVisibleItemPosition() > items.size - 21 && items.size < total) loadMore()
             }
         })
-        root.addView(grid, flp(MATCH, MATCH).apply { topMargin = a.dp(170) })
+        root.addView(grid, flp(MATCH, MATCH).apply { topMargin = a.dp(174) })
         buildAlphaRail()
         alphaScroll.addView(alphaRail, FrameLayout.LayoutParams(WRAP, WRAP))
         root.addView(
@@ -313,7 +318,16 @@ class LibraryPage(a: HomeActivity, private val kind: Kind) : Page(a), RowHost {
         if (!loaded) start()
     }
 
-    override fun onHide() = handler.removeCallbacksAndMessages(null)
+    override fun onHide() {
+        handler.removeCallbacksAndMessages(null)
+        suppressLoadMore = true
+        grid.stopScroll()
+        (grid.layoutManager as GridLayoutManager).scrollToPositionWithOffset(0, 0)
+        alphaScroll.scrollTo(0, 0)
+        activeAlpha = items.firstOrNull()?.let { alphaForTitle(it.title) }
+        repaintAlpha()
+        suppressLoadMore = false
+    }
 
     private fun start() {
         loaded = true
@@ -401,6 +415,7 @@ class LibraryPage(a: HomeActivity, private val kind: Kind) : Page(a), RowHost {
         loading?.cancel()
         items.clear()
         total = 0
+        totalKnown = false
         focus.forget("grid")
         val lib = library ?: run { count.text = "No ${title.text.toString().lowercase()} library on this server"; publish(); return }
         loading = a.scope.launch {
@@ -413,6 +428,7 @@ class LibraryPage(a: HomeActivity, private val kind: Kind) : Page(a), RowHost {
                     val page = provider.browse(lib.id, sort, genre, 0, PAGE)
                     items.clear(); items.addAll(page.items); total = page.total
                 }
+                totalKnown = true
                 withContext(Dispatchers.IO) { a.app.cache.put(cacheKey(), items.take(PAGE)) }
                 publish()
             } catch (_: Exception) {
@@ -451,7 +467,7 @@ class LibraryPage(a: HomeActivity, private val kind: Kind) : Page(a), RowHost {
         val lib = library ?: return
         loading?.cancel()
         val existingIdx = findLetterIndexIn(items, letter)
-        if (existingIdx != null && (items.size - existingIdx >= PAGE || items.size >= total)) {
+        if (totalKnown && existingIdx != null && (items.size - existingIdx >= PAGE || items.size >= total)) {
             activeAlpha = items.getOrNull(existingIdx)?.let { alphaForTitle(it.title) } ?: letter
             repaintAlpha()
             scrollGridTo(existingIdx)
@@ -459,10 +475,12 @@ class LibraryPage(a: HomeActivity, private val kind: Kind) : Page(a), RowHost {
         }
         loading = a.scope.launch {
             try {
-                if (items.isEmpty()) {
+                if (items.isEmpty() || !totalKnown) {
                     val firstPage = provider.browse(lib.id, SortOrder.TITLE, genre, 0, JUMP_PAGE)
+                    items.clear()
                     items.addAll(firstPage.items)
                     total = firstPage.total
+                    totalKnown = true
                 }
                 while (items.size < total) {
                     val found = findLetterIndexIn(items, letter)
