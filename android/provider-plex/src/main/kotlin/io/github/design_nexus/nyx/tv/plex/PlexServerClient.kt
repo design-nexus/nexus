@@ -95,6 +95,7 @@ class PlexServerClient(
             SortOrder.RATING -> "audienceRating:desc"
         }
         if (genreKey != null) q += "genre" to genreKey
+        q += "includeGuids" to "1"
         q += page(offset, limit)
         val o = get("/library/sections/${library.id}/all", q)
         val c = PlexParser.container(o)
@@ -129,6 +130,7 @@ class PlexServerClient(
         val q = ArrayList<Pair<String, String>>()
         q += "includeRelated" to "1"
         q += "includeExtras" to "0"
+        q += "includeGuids" to "1"
         if (includeMarkers) q += "includeMarkers" to "1"
         return PlexParser.container(get("/library/metadata/$id", q)).optJSONArray("Metadata").objects().firstOrNull()
     }
@@ -144,7 +146,7 @@ class PlexServerClient(
     }
 
     fun search(query: String, limit: Int): SearchResults {
-        val o = get("/hubs/search", listOf("query" to query, "limit" to "$limit", "includeCollections" to "1"))
+        val o = get("/hubs/search", listOf("query" to query, "limit" to "$limit", "includeCollections" to "1", "includeGuids" to "1"))
         val all = PlexParser.container(o).optJSONArray("Hub").objects().flatMap { h -> h.optJSONArray("Metadata").objects().mapNotNull { PlexParser.item(it, ref) } }
         return SearchResults(
             movies = all.filter { it.kind == MediaKind.MOVIE },

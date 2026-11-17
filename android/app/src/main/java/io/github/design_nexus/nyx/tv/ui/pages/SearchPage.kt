@@ -2,7 +2,10 @@ package io.github.design_nexus.nyx.tv.ui.pages
 
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.os.Bundle
+import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.KeyEvent
@@ -18,8 +21,11 @@ import io.github.design_nexus.nyx.tv.R
 import io.github.design_nexus.nyx.tv.core.CardStyle
 import io.github.design_nexus.nyx.tv.core.FocusMemory
 import io.github.design_nexus.nyx.tv.data.AppRepository
+import io.github.design_nexus.nyx.tv.data.MediaAvailabilityResolver
+import io.github.design_nexus.nyx.tv.media.MediaItem
 import io.github.design_nexus.nyx.tv.media.MediaProvider
 import io.github.design_nexus.nyx.tv.media.SearchResults
+import io.github.design_nexus.nyx.tv.seerr.SeerrMediaStatus
 import io.github.design_nexus.nyx.tv.ui.Cell
 import io.github.design_nexus.nyx.tv.ui.HomeActivity
 import io.github.design_nexus.nyx.tv.ui.MATCH
@@ -39,6 +45,8 @@ import io.github.design_nexus.nyx.tv.ui.rounded
 import io.github.design_nexus.nyx.tv.ui.text
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -61,6 +69,8 @@ class SearchPage(a: HomeActivity) : Page(a), RowHost {
     private val list = RecyclerView(a)
     private val adapter = RowsAdapter(this)
     private var job: Job? = null
+    private var speech: SpeechRecognizer? = null
+    private var listening = false
 
     init {
         val bar = hlinear(a)
@@ -116,9 +126,100 @@ class SearchPage(a: HomeActivity) : Page(a), RowHost {
         a.paintScrim(full = true)
     }
 
+    override fun onHide() {
+        stopListening()
+        speech?.destroy()
+        speech = null
+    }
+
     fun startVoiceSearch() = voice()
 
+    private fun setListening(active: Boolean) {
+        listening = active
+        val focused = mic.hasFocus()
+        mic.background = when {
+            active -> rounded(palette.red, a.dp(23).toFloat())
+            focused -> rounded(palette.accent, a.dp(23).toFloat())
+            else -> rounded(alpha(palette.o0, 0.2f), a.dp(23).toFloat())
+        }
+        mic.imageTintList = ColorStateList.valueOf(
+            if (active || focused) palette.onAccent else palette.sub1
+        )
+        if (active) {
+            hint.text = "Listening… speak into your remote"
+            hint.visibility = View.VISIBLE
+        }
+    }
+
+    private fun stopListening() {
+        if (!listening) return
+        setListening(false)
+        runCatching { speech?.stopListening() }
+    }
+
     private fun voice() {
+        if (listening) {
+            stopListening()
+            return
+        }
+        if (!SpeechRecognizer.isRecognitionAvailable(a)) {
+            fallbackVoiceIntent()
+            return
+        }
+        if (!a.hasMicPermission()) {
+            a.requestMicPermission { granted ->
+                if (granted) startHeadlessListening()
+                else a.toast("Microphone permission is needed for voice search")
+            }
+            return
+        }
+        startHeadlessListening()
+    }
+
+    private fun startHeadlessListening() {
+        speech?.destroy()
+        val sr = SpeechRecognizer.createSpeechRecognizer(a)
+        speech = sr
+        sr.setRecognitionListener(object : RecognitionListener {
+            override fun onReadyForSpeech(params: Bundle?) = setListening(true)
+            override fun onBeginningOfSpeech() {}
+            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onBufferReceived(buffer: ByteArray?) {}
+            override fun onEndOfSpeech() = setListening(false)
+            override fun onError(error: Int) {
+                setListening(false)
+                if (error != SpeechRecognizer.ERROR_NO_MATCH && error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                    a.toast("Voice search unavailable (error $error)")
+                } else {
+                    hint.text = "Didn't catch that — try again"
+                }
+            }
+            override fun onPartialResults(partialResults: Bundle?) {
+                val text = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
+                if (!text.isNullOrBlank()) {
+                    field.setText(text)
+                    field.setSelection(text.length)
+                }
+            }
+            override fun onResults(results: Bundle?) {
+                setListening(false)
+                val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
+                if (!text.isNullOrBlank()) {
+                    field.setText(text)
+                    field.setSelection(text.length)
+                    schedule(text, now = true)
+                }
+            }
+            override fun onEvent(eventType: Int, params: Bundle?) {}
+        })
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+        setListening(true)
+        sr.startListening(intent)
+    }
+
+    private fun fallbackVoiceIntent() {
         if (Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).resolveActivity(a.packageManager) == null) {
             a.toast("No speech recognizer on this TV")
             return
@@ -144,6 +245,21 @@ class SearchPage(a: HomeActivity) : Page(a), RowHost {
         }
     }
 
+    override fun providerFor(item: MediaItem): MediaProvider =
+        if (item.server.provider == "seerr") a.app.seerr else a.app.plex
+
+    override fun badgeFor(item: MediaItem): Pair<String, Int>? {
+        if (item.server.provider == "plex") return null
+        val info = a.app.seerr.cachedMediaInfo(item) ?: return null
+        return when (info.status) {
+            SeerrMediaStatus.AVAILABLE -> "In Plex" to palette.green
+            SeerrMediaStatus.PENDING -> "Pending" to palette.yellow
+            SeerrMediaStatus.PROCESSING -> "Processing" to palette.accent
+            SeerrMediaStatus.PARTIALLY_AVAILABLE -> "Partial" to palette.yellow
+            else -> null
+        }
+    }
+
     private suspend fun run(q: String) {
         if (q.isEmpty()) {
             adapter.submit(emptyList())
@@ -156,7 +272,15 @@ class SearchPage(a: HomeActivity) : Page(a), RowHost {
         val rows = ArrayList<RowData>()
         if (apps.isNotEmpty()) rows += RowData("apps", "Apps", CardStyle.APP_TILE, apps.take(12).map { Cell.App(it) })
         adapter.submit(rows.toList())
-        val r = runCatching { provider.search(q, 20) }.getOrElse { SearchResults() }
+        val r = coroutineScope {
+            val plexDeferred = async { runCatching { provider.search(q, 20) }.getOrElse { SearchResults() } }
+            val seerrDeferred = if (a.app.seerr.isConfigured) {
+                async { runCatching { a.app.seerr.search(q, 20) }.getOrElse { SearchResults() } }
+            } else null
+            val plexRes = plexDeferred.await()
+            val seerrRes = seerrDeferred?.await() ?: SearchResults()
+            MediaAvailabilityResolver.mergeSearchResults(plexRes, seerrRes)
+        }
         val media = ArrayList<RowData>()
         if (r.movies.isNotEmpty()) media += RowData("movies", "Movies", CardStyle.POSTER, r.movies.map { Cell.Media(it) })
         if (r.shows.isNotEmpty()) media += RowData("shows", "TV Shows", CardStyle.POSTER, r.shows.map { Cell.Media(it) })

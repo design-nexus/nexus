@@ -37,6 +37,7 @@ import io.github.design_nexus.nyx.tv.media.PlaybackOutcome
 import io.github.design_nexus.nyx.tv.media.ProviderStatus
 import io.github.design_nexus.nyx.tv.ui.pages.AppsPage
 import io.github.design_nexus.nyx.tv.ui.pages.DetailsPage
+import io.github.design_nexus.nyx.tv.ui.pages.DiscoverPage
 import io.github.design_nexus.nyx.tv.ui.pages.HomePage
 import io.github.design_nexus.nyx.tv.ui.pages.LibraryPage
 import io.github.design_nexus.nyx.tv.ui.pages.SearchPage
@@ -179,12 +180,14 @@ class HomeActivity : Activity() {
         bar.addView(mark, llp(dp(20), dp(20)) { marginEnd = dp(7) })
         bar.addView(text(15f, p.text, BOLD, s = "Nyx"))
         bar.addView(text(15f, p.sub0, s = " TV"), llp(WRAP, WRAP) { marginEnd = dp(26) })
-        for ((id, label) in listOf("home" to "Home", "movies" to "Movies", "shows" to "TV Shows", "apps" to "Apps")) {
+        for ((id, label) in listOf("home" to "Home", "movies" to "Movies", "shows" to "TV Shows", "discover" to "Discover", "apps" to "Apps")) {
             val t = text(13.5f, p.sub0, MEDIUM, s = label).apply {
                 gravity = Gravity.CENTER
                 setPadding(dp(11), 0, dp(11), 0)
-                isFocusable = true
-                isClickable = true
+                val visible = id != "discover" || app.seerr.isConfigured
+                visibility = if (visible) View.VISIBLE else View.GONE
+                isFocusable = visible
+                isClickable = visible
                 contentDescription = label
                 setOnClickListener { showRoot(id, focus = true) }
                 setOnFocusChangeListener { _, f ->
@@ -249,11 +252,27 @@ class HomeActivity : Activity() {
         }
     }
 
+    fun syncSeerrTab() {
+        val t = tabs["discover"] ?: return
+        val visible = app.seerr.isConfigured
+        t.visibility = if (visible) View.VISIBLE else View.GONE
+        val allow = stack.size <= 1 && visible
+        t.isFocusable = allow
+        t.isClickable = allow
+        if (!visible) {
+            roots.remove("discover")
+        }
+    }
+
     /** Top chrome must not steal focus while a pushed page (Settings, details) is open. */
     private fun updateChromeFocusable() {
         if (!::searchBtn.isInitialized) return
         val allow = stack.size <= 1
-        tabs.values.forEach { it.isFocusable = allow; it.isClickable = allow }
+        tabs.forEach { (id, it) ->
+            val enabled = allow && (id != "discover" || app.seerr.isConfigured)
+            it.isFocusable = enabled
+            it.isClickable = enabled
+        }
         searchBtn.isFocusable = allow
         searchBtn.isClickable = allow
         gearBtn.isFocusable = allow
@@ -298,10 +317,12 @@ class HomeActivity : Activity() {
     // ---------- Pages ----------
 
     fun showRoot(tab: String, focus: Boolean) {
-        val page = roots.getOrPut(tab) {
-            when (tab) {
+        val targetTab = if (tab == "discover" && !app.seerr.isConfigured) "home" else tab
+        val page = roots.getOrPut(targetTab) {
+            when (targetTab) {
                 "movies" -> LibraryPage(this, LibraryPage.Kind.MOVIES)
                 "shows" -> LibraryPage(this, LibraryPage.Kind.SHOWS)
+                "discover" -> DiscoverPage(this)
                 "apps" -> AppsPage(this)
                 "search" -> SearchPage(this)
                 else -> HomePage(this)
@@ -347,8 +368,10 @@ class HomeActivity : Activity() {
             backdrop.setImageDrawable(null)
             return
         }
-        val url = app.plex.imageUrl(path, 1280, 720)
-        val key = app.plex.imageCacheKey(path, 1280, 720)
+        val isPlexPath = path.startsWith("/library/") || path.startsWith("/playlists/")
+        val artProvider = if (isPlexPath) app.plex else app.seerr
+        val url = artProvider.imageUrl(path, 1280, 720)
+        val key = artProvider.imageCacheKey(path, 1280, 720)
         backdropReq = app.images.enqueue(
             ImageRequest.Builder(this).data(url).size(1280, 720).target(backdrop)
                 .apply { if (key != null) { diskCacheKey(key); memoryCacheKey(key) } }.build()
@@ -374,6 +397,28 @@ class HomeActivity : Activity() {
     }
 
     private var voiceResult: ((String) -> Unit)? = null
+    private var micPermissionResult: ((Boolean) -> Unit)? = null
+
+    fun hasMicPermission(): Boolean =
+        checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    fun requestMicPermission(onResult: (Boolean) -> Unit) {
+        if (hasMicPermission()) {
+            onResult(true)
+            return
+        }
+        micPermissionResult = onResult
+        requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 902)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 902) {
+            val granted = grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED
+            micPermissionResult?.invoke(granted)
+            micPermissionResult = null
+        }
+    }
 
     /** Speech through the TV's own recognizer (no service of ours keeps running). */
     fun startVoice(intent: Intent, result: (String) -> Unit): Boolean {

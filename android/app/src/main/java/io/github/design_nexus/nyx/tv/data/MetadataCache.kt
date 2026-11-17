@@ -53,6 +53,7 @@ object MediaJson {
             i.poster?.let { put("po", it) }; i.backdrop?.let { put("bd", it) }; i.thumb?.let { put("th", it) }
             put("r", JSONArray(i.ratings.map { r -> JSONObject().put("s", r.source).put("v", r.value).put("x", r.scale) }))
             put("a", i.addedAt); i.libraryId?.let { put("lib", it) }
+            i.tmdbId?.let { put("tmdb", it) }; i.tvdbId?.let { put("tvdb", it) }; i.imdbId?.let { put("imdb", it) }
         }
     }).toString()
 
@@ -73,6 +74,7 @@ object MediaJson {
                 parentId = s("pid"), seriesId = s("sid"), poster = s("po"), backdrop = s("bd"), thumb = s("th"),
                 ratings = (0 until r.length()).mapNotNull { r.optJSONObject(it) }.map { Rating(it.optString("s"), it.optDouble("v"), it.optDouble("x")) },
                 addedAt = o.optLong("a"), libraryId = s("lib"),
+                tmdbId = i("tmdb"), tvdbId = i("tvdb"), imdbId = s("imdb"),
             )
         }
     }

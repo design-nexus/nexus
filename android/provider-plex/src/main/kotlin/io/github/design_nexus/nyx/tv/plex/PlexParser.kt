@@ -114,7 +114,20 @@ object PlexParser {
             ratings = ratings(v),
             addedAt = v.optLong("addedAt", 0),
             libraryId = key(v, "librarySectionID"),
+            tmdbId = externalId(v, "tmdb://")?.toIntOrNull(),
+            tvdbId = externalId(v, "tvdb://")?.toIntOrNull(),
+            imdbId = externalId(v, "imdb://"),
         )
+    }
+
+    private fun externalId(v: JSONObject, prefix: String): String? {
+        for (g in v.optJSONArray("Guid").objects()) {
+            val id = g.optString("id")
+            if (id.startsWith(prefix)) {
+                return id.removePrefix(prefix).substringBefore('?').ifEmpty { null }
+            }
+        }
+        return null
     }
 
     /** Newer PMS payloads put posters in `Image[]` (`coverPoster`) instead of `thumb`. */

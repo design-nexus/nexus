@@ -14,4 +14,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "nyx-tv"
-include(":app", ":core", ":media-api", ":provider-plex")
+include(":app", ":core", ":media-api", ":provider-plex", ":provider-seerr")

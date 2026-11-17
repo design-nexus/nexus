@@ -21,6 +21,8 @@ import io.github.design_nexus.nyx.tv.playback.PlexAppBridge
 import io.github.design_nexus.nyx.tv.plex.PlexClientInfo
 import io.github.design_nexus.nyx.tv.plex.PlexHttp
 import io.github.design_nexus.nyx.tv.plex.PlexProvider
+import io.github.design_nexus.nyx.tv.seerr.SeerrHttp
+import io.github.design_nexus.nyx.tv.seerr.SeerrProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -36,6 +38,7 @@ class NyxTvApp : Application() {
     lateinit var config: ConfigStore private set
     lateinit var apps: AppRepository private set
     lateinit var plex: PlexProvider private set
+    lateinit var seerr: SeerrProvider private set
     lateinit var cache: MetadataCache private set
     lateinit var home: HomeRepository private set
     lateinit var images: ImageLoader private set
@@ -56,15 +59,24 @@ class NyxTvApp : Application() {
         val deviceName = runCatching { Settings.Global.getString(contentResolver, Settings.Global.DEVICE_NAME) }.getOrNull() ?: "Nyx TV"
         val info = PlexClientInfo(clientId = clientId, version = BuildConfig.VERSION_NAME, deviceName = deviceName)
         lateinit var provider: PlexProvider
+        lateinit var seerrProvider: SeerrProvider
         http = OkHttpClient.Builder()
             .addInterceptor { chain ->
                 val req = chain.request()
+                val b = req.newBuilder()
                 val token = if (req.header("X-Plex-Token") == null) provider.tokenFor(req.url) else null
-                chain.proceed(if (token != null) req.newBuilder().header("X-Plex-Token", token).build() else req)
+                if (token != null) b.header("X-Plex-Token", token)
+                seerrProvider.authHeadersFor(req.url)?.let { auth ->
+                    if (req.header("Cookie") == null) auth.cookie?.let { b.header("Cookie", it) }
+                    if (req.header("X-Api-Key") == null) auth.apiKey?.let { b.header("X-Api-Key", it) }
+                }
+                chain.proceed(b.build())
             }
             .build()
         provider = PlexProvider(PlexHttp(info, http), sessions, scope, localDiscovery = { Multicast.discover(this) })
         plex = provider
+        seerrProvider = SeerrProvider(SeerrHttp(http), sessions)
+        seerr = seerrProvider
         home = HomeRepository(plex, cache, scope)
         playback = PlaybackRouter(playbackPrefs, Media3Bridge(this), PlexAppBridge(this, playbackPrefs))
         images = ImageLoader.Builder(this)

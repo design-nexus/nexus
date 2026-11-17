@@ -52,7 +52,7 @@ import kotlinx.coroutines.launch
 class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME) : Page(a) {
     enum class Section(val title: String) {
         HOME("Home screen"), ROWS("Content rows"), APPEARANCE("Appearance"), APPS("Apps"), PLEX("Plex"),
-        PLAYBACK("Playback"), AMBIENT("Ambient mode"), TV("TV and inputs"), ABOUT("About"),
+        SEERR("Seerr"), PLAYBACK("Playback"), AMBIENT("Ambient mode"), TV("TV and inputs"), ABOUT("About"),
     }
 
     private val p: Palette get() = a.palette
@@ -268,6 +268,7 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
             Section.APPEARANCE -> appearance(c)
             Section.APPS -> apps(c)
             Section.PLEX -> plex()
+            Section.SEERR -> seerr()
             Section.PLAYBACK -> playback()
             Section.AMBIENT -> ambient(c)
             Section.TV -> tv()
@@ -780,6 +781,200 @@ class SettingsPage(a: HomeActivity, private var section: Section = Section.HOME)
                 a.app.plex.signOut(); a.app.home.clear(); renderBody()
             }
         }
+    }
+
+    // ---------- Seerr ----------
+
+    private fun seerr() {
+        val seerr = a.app.seerr
+        val s = seerr.session
+        heading("Seerr", "Discover and request movies and TV shows. Credentials are kept encrypted on this TV and Discover is hidden when Seerr is not configured.")
+        when (val st = seerr.status.value) {
+            is ProviderStatus.Online -> action("Connected (${st.serverName})", "${s?.displayName?.let { "Signed in as $it · " } ?: ""}${st.address}") {}
+            is ProviderStatus.Offline -> action("Seerr is unreachable", st.reason) {}
+            ProviderStatus.Connecting -> action("Connecting to Seerr…", s?.serverUrl) {}
+            ProviderStatus.Unconfigured -> action("Not configured", "Add your Seerr server below to enable the Discover tab") {}
+        }
+        val currentUrl = s?.serverUrl
+        if (currentUrl != null) {
+            action("Server URL", "Local IP, HTTPS, or Tailscale hostname", currentUrl) { seerrServerUrlForm(currentUrl) }
+            action("Test Connection", "Verify reachability without changing credentials") {
+                a.scope.launch {
+                    runCatching { seerr.testConnection(currentUrl) }
+                        .onSuccess { a.toast("Connected to Seerr ${it.version}") }
+                        .onFailure { a.toast(it.message ?: "Could not reach Seerr") }
+                }
+            }
+        }
+        val plexToken = a.app.plex.session?.accountToken
+        if (plexToken != null) {
+            action(
+                if (s != null) "Re-authenticate with Plex" else "Sign in with Plex",
+                "Uses your linked Plex account (recommended for shared TVs)",
+            ) {
+                seerrPlexSignInForm(currentUrl ?: "", plexToken)
+            }
+        }
+        action(
+            if (s != null) "Switch to Seerr local account" else "Sign in with Seerr account",
+            "Email or username and password",
+        ) {
+            seerrLocalSignInForm(currentUrl ?: "")
+        }
+        action(
+            "Sign in with scoped API key",
+            "Fallback only — avoid unrestricted admin API keys on a shared TV",
+        ) {
+            seerrApiKeyForm(currentUrl ?: "")
+        }
+        if (s != null) {
+            action("Disconnect Seerr", "Clears Seerr credentials and hides the Discover tab") {
+                seerr.disconnect()
+                a.syncSeerrTab()
+                renderBody()
+                a.toast("Seerr disconnected")
+            }
+        }
+    }
+
+    private fun seerrUrlField(initial: String): EditText = EditText(a).apply {
+        setText(initial)
+        hint = "http://192.168.1.20:5055 or https://seerr.ts.net"
+        setTextColor(p.text); setHintTextColor(p.sub0); textSize = 15f; typeface = MEDIUM; isSingleLine = true
+        background = rounded(alpha(p.o0, 0.22f), a.dp(10).toFloat()); setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10))
+        trapBodyKeys()
+    }
+
+    private fun seerrInputField(hintText: String, password: Boolean = false): EditText = EditText(a).apply {
+        hint = hintText
+        if (password) inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        setTextColor(p.text); setHintTextColor(p.sub0); textSize = 15f; typeface = MEDIUM; isSingleLine = true
+        background = rounded(alpha(p.o0, 0.22f), a.dp(10).toFloat()); setPadding(a.dp(14), a.dp(10), a.dp(14), a.dp(10))
+        trapBodyKeys()
+    }
+
+    private fun addSeerrButtonRow(primary: PillButton, secondary: PillButton, above: View) {
+        val row = hlinear(a)
+        primary.id = View.generateViewId()
+        secondary.id = View.generateViewId()
+        above.nextFocusDownId = primary.id
+        primary.nextFocusUpId = above.id
+        secondary.nextFocusUpId = above.id
+        primary.trapBodyKeys { code, _ ->
+            if (code == KeyEvent.KEYCODE_DPAD_RIGHT) { secondary.requestFocus(); true } else false
+        }
+        secondary.trapBodyKeys { code, _ ->
+            when (code) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> { primary.requestFocus(); true }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> true
+                else -> false
+            }
+        }
+        row.addView(primary, llp(WRAP, a.dp(38)) { setMargins(a.dp(14), 0, a.dp(10), 0) })
+        row.addView(secondary, llp(WRAP, a.dp(38)))
+        body.addView(row)
+    }
+
+    private fun seerrServerUrlForm(initial: String) {
+        clearBody()
+        heading("Seerr Server URL", "Enter your Seerr server address (LAN IP, HTTPS, or Tailscale hostname).")
+        val urlField = seerrUrlField(initial)
+        urlField.id = View.generateViewId()
+        body.addView(urlField, llp(a.dp(520), WRAP) { setMargins(a.dp(14), a.dp(8), 0, a.dp(14)) })
+        val test = PillButton(a, p, "Test Connection", primary = true)
+        val back = PillButton(a, p, "Back")
+        addSeerrButtonRow(test, back, urlField)
+        back.setOnClickListener { renderBody() }
+        test.setOnClickListener {
+            a.scope.launch {
+                runCatching { a.app.seerr.testConnection(urlField.text.toString()) }
+                    .onSuccess { a.toast("Reachable: Seerr ${it.version}") }
+                    .onFailure { a.toast(it.message ?: "Could not reach Seerr") }
+            }
+        }
+        urlField.requestFocus()
+    }
+
+    private fun seerrPlexSignInForm(initialUrl: String, plexToken: String) {
+        clearBody()
+        heading("Sign in to Seerr with Plex", "Uses your existing Plex account token to create a scoped Seerr session.")
+        val urlField = seerrUrlField(initialUrl)
+        urlField.id = View.generateViewId()
+        body.addView(urlField, llp(a.dp(520), WRAP) { setMargins(a.dp(14), a.dp(8), 0, a.dp(14)) })
+        val go = PillButton(a, p, "Connect", primary = true)
+        val cancel = PillButton(a, p, "Cancel")
+        addSeerrButtonRow(go, cancel, urlField)
+        cancel.setOnClickListener { renderBody() }
+        go.setOnClickListener {
+            a.scope.launch {
+                runCatching { a.app.seerr.signInWithPlex(urlField.text.toString(), plexToken) }
+                    .onSuccess {
+                        a.syncSeerrTab()
+                        a.toast("Connected to Seerr as ${it.displayName}")
+                        renderBody()
+                    }
+                    .onFailure { a.toast(it.message ?: "Seerr Plex sign-in failed") }
+            }
+        }
+        urlField.requestFocus()
+    }
+
+    private fun seerrLocalSignInForm(initialUrl: String) {
+        clearBody()
+        heading("Sign in with Seerr Account", "Credentials are used once to obtain a session cookie and are never stored.")
+        val urlField = seerrUrlField(initialUrl)
+        val emailField = seerrInputField("Email or username")
+        val passField = seerrInputField("Password", password = true)
+        passField.id = View.generateViewId()
+        body.addView(urlField, llp(a.dp(520), WRAP) { setMargins(a.dp(14), a.dp(8), 0, a.dp(10)) })
+        body.addView(emailField, llp(a.dp(520), WRAP) { setMargins(a.dp(14), 0, 0, a.dp(10)) })
+        body.addView(passField, llp(a.dp(520), WRAP) { setMargins(a.dp(14), 0, 0, a.dp(14)) })
+        val go = PillButton(a, p, "Sign in", primary = true)
+        val cancel = PillButton(a, p, "Cancel")
+        addSeerrButtonRow(go, cancel, passField)
+        cancel.setOnClickListener { renderBody() }
+        go.setOnClickListener {
+            a.scope.launch {
+                runCatching {
+                    a.app.seerr.signInLocal(
+                        urlField.text.toString(),
+                        emailField.text.toString(),
+                        passField.text.toString(),
+                    )
+                }.onSuccess {
+                    a.syncSeerrTab()
+                    a.toast("Connected to Seerr as ${it.displayName}")
+                    renderBody()
+                }.onFailure { a.toast(it.message ?: "Sign-in failed") }
+            }
+        }
+        urlField.requestFocus()
+    }
+
+    private fun seerrApiKeyForm(initialUrl: String) {
+        clearBody()
+        heading("Seerr API Key (Scoped)", "Avoid unrestricted admin API keys on a shared TV. Prefer Plex or local user login when possible.")
+        val urlField = seerrUrlField(initialUrl)
+        val keyField = seerrInputField("API key", password = true)
+        keyField.id = View.generateViewId()
+        body.addView(urlField, llp(a.dp(520), WRAP) { setMargins(a.dp(14), a.dp(8), 0, a.dp(10)) })
+        body.addView(keyField, llp(a.dp(520), WRAP) { setMargins(a.dp(14), 0, 0, a.dp(14)) })
+        val go = PillButton(a, p, "Connect", primary = true)
+        val cancel = PillButton(a, p, "Cancel")
+        addSeerrButtonRow(go, cancel, keyField)
+        cancel.setOnClickListener { renderBody() }
+        go.setOnClickListener {
+            a.scope.launch {
+                runCatching { a.app.seerr.signInWithApiKey(urlField.text.toString(), keyField.text.toString()) }
+                    .onSuccess {
+                        a.syncSeerrTab()
+                        a.toast("Connected to Seerr")
+                        renderBody()
+                    }
+                    .onFailure { a.toast(it.message ?: "API key connection failed") }
+            }
+        }
+        urlField.requestFocus()
     }
 
     private fun playback() {

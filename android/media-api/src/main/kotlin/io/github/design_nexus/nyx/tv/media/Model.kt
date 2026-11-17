@@ -40,6 +40,9 @@ data class MediaItem(
     val ratings: List<Rating> = emptyList(),
     val addedAt: Long = 0,
     val libraryId: String? = null,
+    val tmdbId: Int? = null,
+    val tvdbId: Int? = null,
+    val imdbId: String? = null,
 ) {
     val progress: Float
         get() = if (durationMs <= 0 || viewOffsetMs <= 0 || watched) 0f else (viewOffsetMs.toFloat() / durationMs).coerceIn(0f, 1f)
@@ -87,4 +90,13 @@ data class SearchResults(
     val collections: List<MediaItem> = emptyList(),
 ) {
     val isEmpty: Boolean get() = movies.isEmpty() && shows.isEmpty() && episodes.isEmpty() && collections.isEmpty()
+}
+
+/** Contextual action state resolved across Plex (playable) and Seerr (request status). */
+sealed interface ContentActionState {
+    data class AvailableInPlex(val plexItem: MediaItem, val resume: Boolean) : ContentActionState
+    data class PendingApproval(val requestId: Int? = null) : ContentActionState
+    data class ApprovedProcessing(val requestId: Int? = null, val statusLabel: String = "Processing") : ContentActionState
+    data class PartiallyAvailable(val plexItem: MediaItem? = null, val availableSeasons: Set<Int> = emptySet()) : ContentActionState
+    data class NotAvailable(val staleSeerrAvailable: Boolean = false) : ContentActionState
 }

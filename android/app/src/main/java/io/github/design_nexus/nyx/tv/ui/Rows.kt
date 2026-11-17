@@ -38,6 +38,8 @@ interface RowHost {
     val reduceMotion: Boolean
     val focus: FocusMemory
     val scope: CoroutineScope
+    fun providerFor(item: MediaItem): MediaProvider = provider
+    fun badgeFor(item: MediaItem): Pair<String, Int>? = null
     fun onCellFocused(row: RowData, index: Int, cell: Cell)
     fun onCellClicked(row: RowData, cell: Cell)
     fun onCellMenu(row: RowData, cell: Cell, view: View)
@@ -103,7 +105,7 @@ class CellAdapter(private val host: RowHost, private val style: CardStyle, priva
     override fun onBindViewHolder(h: VH, position: Int) {
         val cell = row.cells[position]
         when (cell) {
-            is Cell.Media -> (h.view as MediaCard).bind(cell.item, host.provider, host.images, captions)
+            is Cell.Media -> (h.view as MediaCard).bind(cell.item, host.providerFor(cell.item), host.images, captions, host.badgeFor(cell.item))
             is Cell.App -> bindApp(host, h.view as AppTile, cell.entry, captions)
         }
         h.view.setOnClickListener { host.onCellClicked(row, cell) }

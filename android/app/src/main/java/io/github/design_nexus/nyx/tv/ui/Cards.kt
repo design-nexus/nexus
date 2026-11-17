@@ -155,7 +155,13 @@ class MediaCard(ctx: Context, private val p: Palette, val style: CardStyle, priv
 
     fun clearFocusChrome() = Focus.apply(frame, false, ring, reduceMotion = true)
 
-    fun bind(i: MediaItem, provider: MediaProvider, loader: ImageLoader, showCaption: Boolean) {
+    fun bind(
+        i: MediaItem,
+        provider: MediaProvider,
+        loader: ImageLoader,
+        showCaption: Boolean,
+        statusBadge: Pair<String, Int>? = null,
+    ) {
         item = i
         val landscape = style == CardStyle.LANDSCAPE
         val isEp = i.kind == MediaKind.EPISODE
@@ -188,9 +194,25 @@ class MediaCard(ctx: Context, private val p: Palette, val style: CardStyle, priv
             }
         }
         val unwatched = i.unwatchedCount?.takeIf { it > 0 && (i.kind == MediaKind.SHOW || i.kind == MediaKind.SEASON) }
-        badge.visibility = if (unwatched != null) VISIBLE else GONE
-        badge.text = unwatched?.toString() ?: ""
-        check.visibility = if (unwatched == null && i.watched) VISIBLE else GONE
+        when {
+            statusBadge != null -> {
+                badge.visibility = VISIBLE
+                badge.text = statusBadge.first
+                badge.background = rounded(statusBadge.second, dp(10).toFloat())
+                badge.setTextColor(p.base)
+            }
+            unwatched != null -> {
+                badge.visibility = VISIBLE
+                badge.text = unwatched.toString()
+                badge.background = rounded(p.accent, dp(10).toFloat())
+                badge.setTextColor(p.onAccent)
+            }
+            else -> {
+                badge.visibility = GONE
+                badge.text = ""
+            }
+        }
+        check.visibility = if (statusBadge == null && unwatched == null && i.watched) VISIBLE else GONE
         request?.dispose()
         val path = if (landscape) (i.thumb ?: i.backdrop ?: i.poster) else (i.poster ?: i.thumb)
         val wPx = frame.layoutParams.width; val hPx = frame.layoutParams.height

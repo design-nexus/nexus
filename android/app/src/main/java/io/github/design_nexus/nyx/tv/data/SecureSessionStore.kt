@@ -6,6 +6,9 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import io.github.design_nexus.nyx.tv.plex.PlexSession
 import io.github.design_nexus.nyx.tv.plex.PlexSessionStore
+import io.github.design_nexus.nyx.tv.seerr.SeerrAuthMode
+import io.github.design_nexus.nyx.tv.seerr.SeerrSession
+import io.github.design_nexus.nyx.tv.seerr.SeerrSessionStore
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.KeyStore
@@ -19,10 +22,12 @@ import javax.crypto.spec.GCMParameterSpec
  * the Android Keystore and never leaves it. The app has backups off, so this file isn't
  * copied anywhere either.
  */
-class SecureSessionStore(context: Context) : PlexSessionStore {
+class SecureSessionStore(context: Context) : PlexSessionStore, SeerrSessionStore {
     private val prefs = context.getSharedPreferences("secure", Context.MODE_PRIVATE)
     @Volatile private var cached: PlexSession? = null
     @Volatile private var read = false
+    @Volatile private var cachedSeerr: SeerrSession? = null
+    @Volatile private var readSeerr = false
 
     @Synchronized
     override fun load(): PlexSession? {
@@ -97,8 +102,56 @@ class SecureSessionStore(context: Context) : PlexSessionStore {
         )
     }
 
+    @Synchronized
+    override fun loadSeerr(): SeerrSession? {
+        if (readSeerr) return cachedSeerr
+        cachedSeerr = prefs.getString(SEERR_KEY, null)?.let { runCatching { decodeSeerr(decrypt(it)) }.getOrNull() }
+        readSeerr = true
+        return cachedSeerr
+    }
+
+    @Synchronized
+    override fun saveSeerr(session: SeerrSession?) {
+        if (session == null) {
+            cachedSeerr = null
+            readSeerr = true
+            prefs.edit().remove(SEERR_KEY).apply()
+        } else {
+            val encrypted = runCatching { encrypt(encodeSeerr(session)) }.getOrNull() ?: return
+            cachedSeerr = session
+            readSeerr = true
+            prefs.edit().putString(SEERR_KEY, encrypted).apply()
+        }
+    }
+
+    private fun encodeSeerr(s: SeerrSession) = JSONObject().apply {
+        put("serverUrl", s.serverUrl)
+        put("authMode", s.authMode.name)
+        s.sessionCookie?.let { put("sessionCookie", it) }
+        s.apiKey?.let { put("apiKey", it) }
+        s.userId?.let { put("userId", it) }
+        s.displayName?.let { put("displayName", it) }
+        put("permissions", s.permissions)
+        s.serverVersion?.let { put("serverVersion", it) }
+    }.toString()
+
+    private fun decodeSeerr(t: String): SeerrSession {
+        val o = JSONObject(t)
+        return SeerrSession(
+            serverUrl = o.getString("serverUrl"),
+            authMode = SeerrAuthMode.entries.firstOrNull { it.name == o.optString("authMode") } ?: SeerrAuthMode.LOCAL,
+            sessionCookie = o.optString("sessionCookie").ifEmpty { null },
+            apiKey = o.optString("apiKey").ifEmpty { null },
+            userId = if (o.has("userId")) o.optInt("userId") else null,
+            displayName = o.optString("displayName").ifEmpty { null },
+            permissions = o.optLong("permissions", 0L),
+            serverVersion = o.optString("serverVersion").ifEmpty { null },
+        )
+    }
+
     private companion object {
         const val KEY = "plex_session"
+        const val SEERR_KEY = "seerr_session"
         const val ALIAS = "nyx_tv_secrets"
     }
 }

@@ -70,6 +70,7 @@ kotlin {
 dependencies {
     implementation(project(":core"))
     implementation(project(":provider-plex"))
+    implementation(project(":provider-seerr"))
     implementation(libs.coroutines.android)
     implementation(libs.okhttp)
     implementation(libs.coil.core)
@@ -80,4 +81,6 @@ dependencies {
     implementation(libs.media3.exoplayer.hls)
     implementation(libs.media3.ui)
     implementation(libs.media3.datasource.okhttp)
+    testImplementation(libs.junit)
+    testImplementation(libs.coroutines.test)
 }

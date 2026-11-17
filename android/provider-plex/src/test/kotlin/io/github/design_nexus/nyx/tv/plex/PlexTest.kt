@@ -106,6 +106,17 @@ class PlexParserTest {
         assertNull(PlexParser.artPath("//evil/x"))
     }
 
+    @Test fun externalGuidsParsed() {
+        val v = JSONObject(
+            """{"type":"movie","ratingKey":"101","title":"Dune: Part Two","year":2024,
+               "Guid":[{"id":"imdb://tt15239678"},{"id":"tmdb://693134"},{"id":"tvdb://999"}]}"""
+        )
+        val i = PlexParser.item(v, S)!!
+        assertEquals(693134, i.tmdbId)
+        assertEquals(999, i.tvdbId)
+        assertEquals("tt15239678", i.imdbId)
+    }
+
     @Test fun rejectsUnknownAndBadKeys() {
         assertNull(PlexParser.item(JSONObject("""{"type":"artist","ratingKey":"1"}"""), S))
         assertNull(PlexParser.item(JSONObject("""{"type":"movie","ratingKey":"1/../2"}"""), S))
