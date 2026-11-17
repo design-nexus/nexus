@@ -64,7 +64,15 @@ class CellAdapter(private val host: RowHost, private val style: CardStyle, priva
     fun submit(r: RowData) {
         val old = row.cells
         row = r
-        if (old.map { it.key } == r.cells.map { it.key }) notifyItemRangeChanged(0, r.cells.size) else notifyDataSetChanged()
+        val oldKeys = old.map { it.key }
+        val newKeys = r.cells.map { it.key }
+        when {
+            oldKeys == newKeys -> notifyItemRangeChanged(0, r.cells.size)
+            old.isNotEmpty() && r.cells.size > old.size && newKeys.subList(0, old.size) == oldKeys -> {
+                notifyItemRangeInserted(old.size, r.cells.size - old.size)
+            }
+            else -> notifyDataSetChanged()
+        }
     }
 
     override fun getItemCount() = row.cells.size

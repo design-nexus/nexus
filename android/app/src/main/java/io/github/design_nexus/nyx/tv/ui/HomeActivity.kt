@@ -524,6 +524,14 @@ class HomeActivity : Activity() {
             }
         }
         if (event.action == KeyEvent.ACTION_DOWN) {
+            if (event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN && overlay == null && stack.size <= 1) {
+                val focusedTab = tabs.entries.firstOrNull { it.value.hasFocus() }?.key
+                if (focusedTab != null) {
+                    if (currentRootTab() != focusedTab) showRoot(focusedTab, focus = true)
+                    else stack.lastOrNull()?.focusDefault()
+                    return true
+                }
+            }
             when (event.keyCode) {
                 // SETTINGS is often stolen by the framework; on TCL the gear arrives as NOTIFICATION.
                 KeyEvent.KEYCODE_SETTINGS, KeyEvent.KEYCODE_NOTIFICATION -> {

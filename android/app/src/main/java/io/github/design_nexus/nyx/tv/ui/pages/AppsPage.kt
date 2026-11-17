@@ -48,7 +48,26 @@ class AppsPage(a: HomeActivity) : Page(a), RowHost {
     override val focus = FocusMemory()
     override val scope: CoroutineScope get() = a.scope
 
-    private val root = FrameLayout(a)
+    private val root = object : FrameLayout(a) {
+        override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+            if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                if (favRow.list.hasFocus()) {
+                    a.focusNav()
+                    return true
+                }
+                if (favRow.adapter.itemCount == 0 && grid.hasFocus()) {
+                    val focused = grid.focusedChild
+                    val pos = if (focused != null) grid.getChildAdapterPosition(focused) else RecyclerView.NO_POSITION
+                    val cols = (grid.layoutManager as GridLayoutManager).spanCount
+                    if (pos in 0 until cols) {
+                        a.focusNav()
+                        return true
+                    }
+                }
+            }
+            return super.dispatchKeyEvent(event)
+        }
+    }
     override val view: View get() = root
     private val favRow = RowView(a, this, CardStyle.APP_TILE, RecyclerView.RecycledViewPool())
     private val count = a.text(12f, palette.sub0)
@@ -88,7 +107,11 @@ class AppsPage(a: HomeActivity) : Page(a), RowHost {
     }
 
     override fun focusDefault() {
-        if (favRow.adapter.itemCount > 0) favRow.focusRemembered(focus) else grid.getChildAt(0)?.requestFocus()
+        if (favRow.adapter.itemCount > 0) favRow.focusFirst()
+        else {
+            grid.scrollToPosition(0)
+            grid.post { grid.layoutManager?.findViewByPosition(0)?.requestFocus() }
+        }
     }
 
     override fun onShow() {
