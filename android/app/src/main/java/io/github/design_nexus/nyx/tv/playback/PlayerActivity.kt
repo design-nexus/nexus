@@ -27,6 +27,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import kotlinx.coroutines.Job
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem as ExoMediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -596,6 +597,7 @@ class PlayerActivity : Activity() {
         }.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
 
         val exo = ExoPlayer.Builder(this, renderers).setMediaSourceFactory(mediaFactory).build()
+        applySubtitleSelection(exo)
         player = exo
         playerView.player = exo
         exo.playbackParameters = PlaybackParameters(speed)
@@ -1110,11 +1112,25 @@ class PlayerActivity : Activity() {
         offsetValueView?.text = "${prefs.audioOffsetMs} ms"
     }
 
+    private fun applySubtitleSelection(exo: ExoPlayer) {
+        val disable = subtitleId == null
+        exo.trackSelectionParameters = exo.trackSelectionParameters
+            .buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, disable)
+            .build()
+        playerView.subtitleView?.visibility = if (disable) View.GONE else View.VISIBLE
+    }
+
     private fun showSubsPanel() {
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         body.addView(menuRow("None", null, selected = subtitleId == null) {
-            subtitleId = null; closeMenu(); resumeMs = absolutePosition()
-            startStream(source?.mode ?: StreamMode.DIRECT)
+            subtitleId = null; closeMenu()
+            if (source?.mode == StreamMode.DIRECT) {
+                player?.let { applySubtitleSelection(it) }
+            } else {
+                resumeMs = absolutePosition()
+                startStream(source?.mode ?: StreamMode.DIRECT)
+            }
         })
         for (t in info?.subtitleTracks.orEmpty()) {
             body.addView(menuRow(t.title, t.language, selected = t.id == subtitleId) {
