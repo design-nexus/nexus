@@ -7,6 +7,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
@@ -176,13 +177,21 @@ class LibraryPage(a: HomeActivity, private val kind: Kind) : Page(a), RowHost {
                 rect: Rect,
                 immediate: Boolean,
                 focusedChildVisible: Boolean,
-            ): Boolean = if (alphaRail.hasFocus()) false else super.requestChildRectangleOnScreen(parent, child, rect, immediate, focusedChildVisible)
+            ): Boolean {
+                if (alphaRail.hasFocus()) return false
+                val dy = child.top - parent.paddingTop
+                if (dy == 0) return false
+                if (immediate || reduceMotion) parent.scrollBy(0, dy) else parent.smoothScrollBy(0, dy)
+                return true
+            }
         }
         grid.adapter = adapter
         grid.itemAnimator = null
         grid.clipToPadding = false
         grid.clipChildren = false
-        grid.setPadding(a.dp(48), 0, a.dp(48), a.dp(40))
+        grid.outlineProvider = ViewOutlineProvider.BOUNDS
+        grid.clipToOutline = true
+        grid.setPadding(a.dp(48), a.dp(14), a.dp(48), a.dp(40))
         grid.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
         grid.setHasFixedSize(true)
         grid.isNestedScrollingEnabled = false
@@ -193,7 +202,7 @@ class LibraryPage(a: HomeActivity, private val kind: Kind) : Page(a), RowHost {
                 if (!collectionsMode && lm.findLastVisibleItemPosition() > items.size - 21 && items.size < total) loadMore()
             }
         })
-        root.addView(grid, flp(MATCH, MATCH).apply { topMargin = a.dp(174) })
+        root.addView(grid, flp(MATCH, MATCH).apply { topMargin = a.dp(166) })
         buildAlphaRail()
         alphaScroll.addView(alphaRail, FrameLayout.LayoutParams(WRAP, WRAP))
         root.addView(
@@ -538,7 +547,7 @@ class LibraryPage(a: HomeActivity, private val kind: Kind) : Page(a), RowHost {
         count.text = if (total > 0) "${"%,d".format(total)} $noun" else if (library == null) count.text else "Nothing here yet"
         val showAlpha = sort == SortOrder.TITLE && items.isNotEmpty()
         alphaScroll.visibility = if (showAlpha) View.VISIBLE else View.GONE
-        grid.setPadding(a.dp(48), 0, a.dp(if (showAlpha) 56 else 48), a.dp(40))
+        grid.setPadding(a.dp(48), a.dp(14), a.dp(if (showAlpha) 56 else 48), a.dp(40))
         adapter.submit(RowData("grid", "", CardStyle.POSTER, items.map { Cell.Media(it) }))
         if (allowAutoFocus && root.isAttachedToWindow && root.findFocus() == null && a.currentRootTab() == tab) {
             focusFirstGridItem()

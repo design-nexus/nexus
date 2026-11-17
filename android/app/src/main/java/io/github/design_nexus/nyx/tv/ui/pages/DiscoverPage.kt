@@ -3,6 +3,7 @@ package io.github.design_nexus.nyx.tv.ui.pages
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
@@ -100,7 +101,7 @@ class DiscoverPage(a: HomeActivity) : Page(a), RowHost {
     override val view: View get() = root
 
     private val header = vlinear(a).apply { clipChildren = false; clipToPadding = false }
-    private val title = a.text(30f, palette.text, BOLD, s = "Discover")
+    private val title = a.text(26f, palette.text, BOLD, s = "Discover")
     private val subtitle = a.text(13f, palette.sub0)
     private val chips = hlinear(a).apply { clipChildren = false; clipToPadding = false }
     private val chipViews = LinkedHashMap<Mode, Chip>()
@@ -122,7 +123,7 @@ class DiscoverPage(a: HomeActivity) : Page(a), RowHost {
         val top = hlinear(a).apply { gravity = Gravity.CENTER_VERTICAL }
         top.addView(title, llp(WRAP, WRAP) { marginEnd = a.dp(14) })
         top.addView(subtitle)
-        header.addView(top, llp(MATCH, WRAP) { setMargins(a.dp(48), 0, a.dp(48), a.dp(10)) })
+        header.addView(top, llp(MATCH, WRAP) { setMargins(a.dp(48), 0, a.dp(48), a.dp(6)) })
 
         val chipScroll = HorizontalScrollView(a).apply {
             isHorizontalScrollBarEnabled = false
@@ -133,15 +134,30 @@ class DiscoverPage(a: HomeActivity) : Page(a), RowHost {
         }
         buildChips()
         header.addView(chipScroll, llp(MATCH, WRAP))
-        root.addView(header, flp(MATCH, WRAP).apply { topMargin = a.dp(74) })
+        root.addView(header, flp(MATCH, WRAP).apply { topMargin = a.dp(68) })
 
-        list.layoutManager = LinearLayoutManager(a)
+        list.layoutManager = object : LinearLayoutManager(a) {
+            override fun requestChildRectangleOnScreen(
+                parent: RecyclerView,
+                child: View,
+                rect: android.graphics.Rect,
+                immediate: Boolean,
+                focusedChildVisible: Boolean,
+            ): Boolean {
+                val dy = child.top - parent.paddingTop
+                if (dy == 0) return false
+                if (immediate || reduceMotion) parent.scrollBy(0, dy) else parent.smoothScrollBy(0, dy)
+                return true
+            }
+        }
         list.adapter = adapter
         list.itemAnimator = null
         list.clipChildren = false
         list.clipToPadding = false
-        list.setPadding(0, a.dp(10), 0, a.dp(100))
-        root.addView(list, flp(MATCH, MATCH).apply { topMargin = a.dp(160) })
+        list.outlineProvider = ViewOutlineProvider.BOUNDS
+        list.clipToOutline = true
+        list.setPadding(0, a.dp(6), 0, a.dp(16))
+        root.addView(list, flp(MATCH, MATCH).apply { topMargin = a.dp(138) })
         root.addView(empty, flp(a.dp(520), WRAP, Gravity.CENTER))
     }
 
