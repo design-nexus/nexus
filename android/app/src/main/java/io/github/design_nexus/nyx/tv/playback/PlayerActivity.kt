@@ -50,10 +50,15 @@ import io.github.design_nexus.nyx.tv.media.StreamMode
 import io.github.design_nexus.nyx.tv.media.StreamSource
 import io.github.design_nexus.nyx.tv.media.TimelineState
 import io.github.design_nexus.nyx.tv.media.TimelineUpdate
+import io.github.design_nexus.nyx.tv.device.TvSystem
 import io.github.design_nexus.nyx.tv.ui.BOLD
 import io.github.design_nexus.nyx.tv.ui.Images
+import io.github.design_nexus.nyx.tv.ui.MATCH
 import io.github.design_nexus.nyx.tv.ui.MEDIUM
+import io.github.design_nexus.nyx.tv.ui.MenuPanel
 import io.github.design_nexus.nyx.tv.ui.Palette
+import io.github.design_nexus.nyx.tv.ui.QuickSettings
+import io.github.design_nexus.nyx.tv.ui.QuickSettingsHost
 import io.github.design_nexus.nyx.tv.ui.WRAP
 import io.github.design_nexus.nyx.tv.ui.alpha
 import io.github.design_nexus.nyx.tv.ui.dp
@@ -61,6 +66,7 @@ import io.github.design_nexus.nyx.tv.ui.flp
 import io.github.design_nexus.nyx.tv.ui.llp
 import io.github.design_nexus.nyx.tv.ui.rounded
 import io.github.design_nexus.nyx.tv.ui.text
+import io.github.design_nexus.nyx.tv.ui.HomeActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -77,12 +83,14 @@ import java.util.concurrent.TimeUnit
  * Settings is a right panel; Audio sync is Nyx-only.
  */
 @UnstableApi
-class PlayerActivity : Activity() {
+class PlayerActivity : Activity(), QuickSettingsHost {
     private val app get() = application as NyxTvApp
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val main = Handler(Looper.getMainLooper())
     private lateinit var prefs: PlaybackPrefs
-    private lateinit var palette: Palette
+    override lateinit var palette: Palette
+        private set
+    override val clock24h: Boolean get() = app.config.config.value.clock24h
     private lateinit var delayProcessor: AudioDelayProcessor
     private lateinit var playerView: PlayerView
     private lateinit var root: FrameLayout
@@ -108,7 +116,10 @@ class PlayerActivity : Activity() {
     private lateinit var settingsBtn: ImageView
     private lateinit var bottomChrome: LinearLayout
     private lateinit var railHost: FrameLayout
+    private lateinit var overlayHost: FrameLayout
     private lateinit var spinner: ProgressBar
+    private var overlay: View? = null
+    private var overlayReturn: View? = null
     private var upNextHost: LinearLayout? = null
     private var upNextLabel: TextView? = null
     private var upNextPlayBtn: TextView? = null
@@ -248,6 +259,8 @@ class PlayerActivity : Activity() {
         root.addView(skipBand, flp(MATCH_PARENT, WRAP_CONTENT, Gravity.BOTTOM).apply { bottomMargin = dp(168) })
         railHost = FrameLayout(this).apply { visibility = View.GONE; isClickable = true }
         root.addView(railHost, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        overlayHost = FrameLayout(this)
+        root.addView(overlayHost, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         setContentView(root)
 
         loadFromIntent(intent)
@@ -1394,16 +1407,94 @@ class PlayerActivity : Activity() {
      * Hidden: OK play/pause · ←→ seek · ↑↓ show chrome (scrubber) · Back exit
      * Visible: OK activate · ←→ seek on scrubber · ↑ Subs/Settings · ↓ Chapters · Back hide
      * Settings: L/R drill or nudge offset · Down on Audio sync / Back closes panel
+     * Long-press Back / gear: Quick Settings over video (playback keeps running).
      */
-    private fun launchHomeOverlay(extra: String) {
+    private fun leaveToHome(extra: String) {
+        closeOverlay()
         startActivity(
-            android.content.Intent(this, io.github.design_nexus.nyx.tv.ui.HomeActivity::class.java)
-                .addFlags(android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            Intent(this, HomeActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 .putExtra(extra, true),
         )
     }
 
+    private fun openOverlay(v: View) {
+        closeOverlay()
+        overlayReturn = currentFocus
+        overlay = v
+        chrome.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        railHost.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        overlayHost.addView(v, flp(MATCH, MATCH))
+    }
+
+    override fun closeOverlay() {
+        val v = overlay ?: return
+        overlayHost.removeView(v)
+        overlay = null
+        chrome.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+        railHost.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+        val ret = overlayReturn?.takeIf { it.isAttachedToWindow }
+        overlayReturn = null
+        if (ret != null) ret.requestFocus() else root.requestFocus()
+    }
+
+    override fun openQuickSettings() {
+        if (overlay is QuickSettings) {
+            closeOverlay()
+            return
+        }
+        if (menuOpen) closeMenu()
+        openOverlay(QuickSettings(this, this).also { it.post { it.focusFirst() } })
+    }
+
+    override fun openInputs() {
+        val tv = TvSystem(this)
+        val list = tv.inputs().filter { it.passthrough }
+        if (list.isEmpty()) {
+            closeOverlay()
+            if (!tv.open(TvSystem.Screen.ALL)) toast("This TV doesn't list its HDMI inputs to apps")
+            return
+        }
+        showMenu(
+            "Inputs",
+            "HDMI inputs",
+            list.map { i ->
+                MenuPanel.Item(i.label, "HDMI") {
+                    if (!tv.switchTo(i)) toast("${i.label} couldn't be opened")
+                }
+            },
+        )
+    }
+
+    override fun showMenu(title: String?, subtitle: String?, items: List<MenuPanel.Item>, anchorStart: Int, anchorTop: Int) {
+        val panel = MenuPanel(this, palette, title, subtitle, items) { closeOverlay() }
+        val wrap = FrameLayout(this).apply {
+            setBackgroundColor(alpha(palette.base, 0.62f))
+            isClickable = true
+        }
+        val lpx = flp(dp(280), WRAP).apply {
+            if (anchorStart == 0 && anchorTop == 0) gravity = Gravity.CENTER
+            else {
+                leftMargin = anchorStart
+                topMargin = anchorTop
+            }
+        }
+        wrap.addView(panel, lpx)
+        openOverlay(wrap)
+        panel.post { panel.focusFirst() }
+    }
+
+    override fun startAmbient() = leaveToHome(HomeActivity.EXTRA_START_AMBIENT)
+
+    override fun startSleepAmbient() = leaveToHome(HomeActivity.EXTRA_START_SLEEP_AMBIENT)
+
+    override fun openNyxSettings() = leaveToHome(HomeActivity.EXTRA_OPEN_SETTINGS)
+
     private fun handleBackPress(): Boolean {
+        if (overlay != null) {
+            closeOverlay()
+            return true
+        }
         if (menuOpen) {
             when (menuKind) {
                 Menu.SETTINGS -> if (handleSettingsKeys(KeyEvent.KEYCODE_BACK)) return true
@@ -1445,7 +1536,7 @@ class PlayerActivity : Activity() {
                         backLongPressHandled = false
                     } else if (!backLongPressHandled) {
                         backLongPressHandled = true
-                        launchHomeOverlay(io.github.design_nexus.nyx.tv.ui.HomeActivity.EXTRA_OPEN_QUICK_SETTINGS)
+                        openQuickSettings()
                     }
                     return true
                 }
@@ -1461,17 +1552,20 @@ class PlayerActivity : Activity() {
         }
         if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
 
-        // Launcher remote keys: leave playback and open Home overlays.
+        // Quick Settings / Inputs stay on the player so video keeps playing.
         when (key) {
             KeyEvent.KEYCODE_SETTINGS, KeyEvent.KEYCODE_NOTIFICATION -> {
-                launchHomeOverlay(io.github.design_nexus.nyx.tv.ui.HomeActivity.EXTRA_OPEN_QUICK_SETTINGS)
+                openQuickSettings()
                 return true
             }
             KeyEvent.KEYCODE_TV_INPUT, KeyEvent.KEYCODE_WINDOW -> {
-                launchHomeOverlay(io.github.design_nexus.nyx.tv.ui.HomeActivity.EXTRA_OPEN_INPUTS)
+                openInputs()
                 return true
             }
         }
+
+        // Overlay owns D-pad / OK; don't let player chrome steal them.
+        if (overlay != null) return super.dispatchKeyEvent(event)
 
         if (menuOpen) {
             when (menuKind) {
@@ -1718,7 +1812,7 @@ class PlayerActivity : Activity() {
         super.onDestroy()
     }
 
-    private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_SHORT).show()
+    override fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     private fun fmt(ms: Long): String {
         val s = (ms / 1000).toInt().coerceAtLeast(0)
         val h = s / 3600; val m = (s % 3600) / 60; val sec = s % 60

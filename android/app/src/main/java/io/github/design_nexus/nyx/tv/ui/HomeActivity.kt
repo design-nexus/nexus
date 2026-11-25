@@ -35,6 +35,7 @@ import io.github.design_nexus.nyx.tv.device.TvSystem
 import io.github.design_nexus.nyx.tv.media.MediaItem
 import io.github.design_nexus.nyx.tv.media.PlaybackOutcome
 import io.github.design_nexus.nyx.tv.media.ProviderStatus
+import io.github.design_nexus.nyx.tv.playback.PlayableResolver
 import io.github.design_nexus.nyx.tv.ui.pages.AppsPage
 import io.github.design_nexus.nyx.tv.ui.pages.DetailsPage
 import io.github.design_nexus.nyx.tv.ui.pages.DiscoverPage
@@ -66,12 +67,13 @@ abstract class Page(val a: HomeActivity) {
     open fun onAppsChanged(apps: List<AppEntry>) {}
 }
 
-class HomeActivity : Activity() {
+class HomeActivity : Activity(), QuickSettingsHost {
     val app get() = application as NyxTvApp
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    lateinit var palette: Palette private set
+    override lateinit var palette: Palette private set
     var config: LauncherConfig = LauncherConfig()
         private set
+    override val clock24h: Boolean get() = config.clock24h
     var apps: List<AppEntry> = emptyList()
         private set
 
@@ -382,10 +384,22 @@ class HomeActivity : Activity() {
 
     fun play(item: MediaItem, fromStart: Boolean = false) {
         scope.launch {
-            when (val r = app.playback.play(item, fromStart)) {
-                is PlaybackOutcome.Failed -> toast(r.reason)
-                is PlaybackOutcome.Fallback -> {}
-                is PlaybackOutcome.Started -> {}
+            when (val resolved = PlayableResolver.resolve(app.plex, item)) {
+                is PlayableResolver.Result.OpenDetails -> {
+                    openDetails(resolved.item)
+                    return@launch
+                }
+                is PlayableResolver.Result.Failed -> {
+                    toast(resolved.reason)
+                    return@launch
+                }
+                is PlayableResolver.Result.Play -> {
+                    when (val r = app.playback.play(resolved.item, fromStart)) {
+                        is PlaybackOutcome.Failed -> toast(r.reason)
+                        is PlaybackOutcome.Fallback -> {}
+                        is PlaybackOutcome.Started -> {}
+                    }
+                }
             }
         }
     }
@@ -450,11 +464,12 @@ class HomeActivity : Activity() {
         voiceResult = null
     }
 
-    fun toast(msg: String) = android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
-
     // ---------- Overlays ----------
 
-    fun showMenu(title: String?, subtitle: String?, items: List<MenuPanel.Item>, anchorStart: Int = 0, anchorTop: Int = 0) {
+    fun showMenu(title: String?, subtitle: String?, items: List<MenuPanel.Item>) =
+        showMenu(title, subtitle, items, 0, 0)
+
+    override fun showMenu(title: String?, subtitle: String?, items: List<MenuPanel.Item>, anchorStart: Int, anchorTop: Int) {
         val panel = MenuPanel(this, palette, title, subtitle, items) { closeOverlay() }
         val wrap = FrameLayout(this).apply { setBackgroundColor(alpha(palette.base, 0.62f)); isClickable = true }
         val lpx = flp(dp(280), WRAP).apply {
@@ -475,7 +490,7 @@ class HomeActivity : Activity() {
         overlayHost.addView(v, flp(MATCH, MATCH))
     }
 
-    fun closeOverlay() {
+    override fun closeOverlay() {
         val v = overlay ?: return
         overlayHost.removeView(v)
         overlay = null
@@ -485,16 +500,16 @@ class HomeActivity : Activity() {
         overlayReturn = null
     }
 
-    fun openQuickSettings() {
+    override fun openQuickSettings() {
         if (overlay is QuickSettings) {
             closeOverlay()
             return
         }
-        openOverlay(QuickSettings(this).also { it.post { it.focusFirst() } })
+        openOverlay(QuickSettings(this, this).also { it.post { it.focusFirst() } })
     }
 
     /** HDMI input picker (remote Input key and Quick Settings tile). */
-    fun openInputs() {
+    override fun openInputs() {
         val tv = TvSystem(this)
         val list = tv.inputs().filter { it.passthrough }
         if (list.isEmpty()) {
@@ -513,7 +528,7 @@ class HomeActivity : Activity() {
         )
     }
 
-    fun startAmbient(source: AmbientSource = config.ambient.source) {
+    fun startAmbient(source: AmbientSource) {
         if (ambient != null) return
         val v = AmbientView(this, palette, source, config.ambient.showClock, config.clock24h)
         ambient = v
@@ -521,13 +536,22 @@ class HomeActivity : Activity() {
         v.start(app.cache, app.plex, app.images)
     }
 
+    override fun startAmbient() = startAmbient(config.ambient.source)
+
     /** Sleep-timer expiry: black Ambient (not real TV standby). */
-    fun startSleepAmbient() {
+    override fun startSleepAmbient() {
         closeOverlay()
         stopAmbient()
         startAmbient(AmbientSource.BLACK)
         toast("Sleep timer — Ambient on. Press any key to wake.")
     }
+
+    override fun openNyxSettings() {
+        closeOverlay()
+        push(SettingsPage(this, SettingsPage.Section.HOME))
+    }
+
+    override fun toast(msg: String) = android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
 
     private fun stopAmbient(): Boolean {
         val v = ambient ?: return false
@@ -620,7 +644,10 @@ class HomeActivity : Activity() {
         if (!isQuickSettingsToggle) closeOverlay()
         if (intent.hasCategory(Intent.CATEGORY_HOME) &&
             !intent.getBooleanExtra(EXTRA_OPEN_INPUTS, false) &&
-            !intent.getBooleanExtra(EXTRA_OPEN_QUICK_SETTINGS, false)
+            !intent.getBooleanExtra(EXTRA_OPEN_QUICK_SETTINGS, false) &&
+            !intent.getBooleanExtra(EXTRA_OPEN_SETTINGS, false) &&
+            !intent.getBooleanExtra(EXTRA_START_AMBIENT, false) &&
+            !intent.getBooleanExtra(EXTRA_START_SLEEP_AMBIENT, false)
         ) {
             showRoot("home", focus = true)
         }
@@ -643,6 +670,18 @@ class HomeActivity : Activity() {
                     intent.action = Intent.ACTION_MAIN
                 }
                 pageHost.post { openQuickSettings() }
+            }
+            intent.getBooleanExtra(EXTRA_OPEN_SETTINGS, false) -> {
+                intent.removeExtra(EXTRA_OPEN_SETTINGS)
+                pageHost.post { openNyxSettings() }
+            }
+            intent.getBooleanExtra(EXTRA_START_SLEEP_AMBIENT, false) -> {
+                intent.removeExtra(EXTRA_START_SLEEP_AMBIENT)
+                pageHost.post { startSleepAmbient() }
+            }
+            intent.getBooleanExtra(EXTRA_START_AMBIENT, false) -> {
+                intent.removeExtra(EXTRA_START_AMBIENT)
+                pageHost.post { startAmbient() }
             }
         }
     }
@@ -692,6 +731,9 @@ class HomeActivity : Activity() {
         const val VOICE = 41
         const val EXTRA_OPEN_INPUTS = "io.github.design_nexus.nyx.tv.OPEN_INPUTS"
         const val EXTRA_OPEN_QUICK_SETTINGS = "io.github.design_nexus.nyx.tv.OPEN_QUICK_SETTINGS"
+        const val EXTRA_OPEN_SETTINGS = "io.github.design_nexus.nyx.tv.OPEN_SETTINGS"
+        const val EXTRA_START_AMBIENT = "io.github.design_nexus.nyx.tv.START_AMBIENT"
+        const val EXTRA_START_SLEEP_AMBIENT = "io.github.design_nexus.nyx.tv.START_SLEEP_AMBIENT"
         const val ACTION_TOGGLE_NOTIFICATION_PANEL = "android.app.action.TOGGLE_NOTIFICATION_HANDLER_PANEL"
         const val ACTION_OPEN_NOTIFICATION_PANEL = "android.app.action.OPEN_NOTIFICATION_HANDLER_PANEL"
     }

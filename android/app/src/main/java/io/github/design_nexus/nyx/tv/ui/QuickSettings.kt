@@ -1,5 +1,6 @@
 package io.github.design_nexus.nyx.tv.ui
 
+import android.content.Context
 import android.content.res.ColorStateList
 import android.text.format.DateFormat
 import android.view.Gravity
@@ -13,13 +14,15 @@ import android.widget.LinearLayout
 import io.github.design_nexus.nyx.tv.R
 import io.github.design_nexus.nyx.tv.device.SleepTimer
 import io.github.design_nexus.nyx.tv.device.TvSystem
-import io.github.design_nexus.nyx.tv.ui.pages.SettingsPage
 import java.util.Date
 
 /** The compact panel on the right: network, Bluetooth, inputs, sleep timer, ambient, settings. */
-class QuickSettings(private val a: HomeActivity) : FrameLayout(a) {
-    private val p = a.palette
-    private val tv = TvSystem(a)
+class QuickSettings(
+    context: Context,
+    private val host: QuickSettingsHost,
+) : FrameLayout(context) {
+    private val p = host.palette
+    private val tv = TvSystem(context)
     private val tiles = ArrayList<View>()
     private var first: View? = null
     private lateinit var panel: LinearLayout
@@ -29,7 +32,7 @@ class QuickSettings(private val a: HomeActivity) : FrameLayout(a) {
         isClickable = true
         isFocusable = false
         descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
-        panel = LinearLayout(a).apply {
+        panel = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(p.mantle)
             setPadding(dp(26), dp(30), dp(26), dp(24))
@@ -37,11 +40,11 @@ class QuickSettings(private val a: HomeActivity) : FrameLayout(a) {
             isClickable = true
             descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
         }
-        panel.addView(a.text(32f, p.text, LIGHT, s = DateFormat.format(if (a.config.clock24h) "H:mm" else "h:mm", Date())))
-        panel.addView(a.text(12.5f, p.sub0, s = DateFormat.format("EEEE, MMMM d", Date())), llp(WRAP, WRAP) { bottomMargin = dp(18) })
-        val grid = GridLayout(a).apply { columnCount = 2 }
+        panel.addView(context.text(32f, p.text, LIGHT, s = DateFormat.format(if (host.clock24h) "H:mm" else "h:mm", Date())))
+        panel.addView(context.text(12.5f, p.sub0, s = DateFormat.format("EEEE, MMMM d", Date())), llp(WRAP, WRAP) { bottomMargin = dp(18) })
+        val grid = GridLayout(context).apply { columnCount = 2 }
         fun tile(icon: Int, title: String, sub: String, on: Boolean = false, action: () -> Unit) {
-            val t = LinearLayout(a).apply {
+            val t = LinearLayout(context).apply {
                 id = View.generateViewId()
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -49,9 +52,9 @@ class QuickSettings(private val a: HomeActivity) : FrameLayout(a) {
                 isClickable = true
                 contentDescription = "$title. $sub"
             }
-            val iv = ImageView(a).apply { setImageResource(icon) }
-            val tt = a.text(12.5f, p.text, MEDIUM, s = title)
-            val ts = a.text(10f, p.sub0, s = sub)
+            val iv = ImageView(context).apply { setImageResource(icon) }
+            val tt = context.text(12.5f, p.text, MEDIUM, s = title)
+            val ts = context.text(10f, p.sub0, s = sub)
             t.addView(iv, llp(dp(18), dp(18)) { bottomMargin = dp(12) })
             t.addView(tt)
             t.addView(ts)
@@ -71,18 +74,18 @@ class QuickSettings(private val a: HomeActivity) : FrameLayout(a) {
             tiles += t
             if (first == null) first = t
         }
-        tile(R.drawable.ic_wifi, "Network", "Wi-Fi and Ethernet", on = true) { a.closeOverlay(); tv.open(TvSystem.Screen.WIFI) }
-        tile(R.drawable.ic_bt, "Bluetooth", "Remotes, speakers", on = true) { a.closeOverlay(); tv.open(TvSystem.Screen.BLUETOOTH) }
-        tile(R.drawable.ic_input, "Inputs", "HDMI") { a.openInputs() }
+        tile(R.drawable.ic_wifi, "Network", "Wi-Fi and Ethernet", on = true) { host.closeOverlay(); tv.open(TvSystem.Screen.WIFI) }
+        tile(R.drawable.ic_bt, "Bluetooth", "Remotes, speakers", on = true) { host.closeOverlay(); tv.open(TvSystem.Screen.BLUETOOTH) }
+        tile(R.drawable.ic_input, "Inputs", "HDMI") { host.openInputs() }
         tile(R.drawable.ic_moon, "Sleep timer", SleepTimer.subtitle(), on = SleepTimer.isActive()) { showSleepTimer() }
-        tile(R.drawable.ic_sound, "Sound", "Output and audio") { a.closeOverlay(); tv.open(TvSystem.Screen.SOUND) }
-        tile(R.drawable.ic_image, "Ambient now", "Artwork and a clock") { a.closeOverlay(); a.startAmbient() }
-        tile(R.drawable.ic_gear, "Nyx TV settings", "Home, rows, Plex") { a.closeOverlay(); a.push(SettingsPage(a, SettingsPage.Section.HOME)) }
-        tile(R.drawable.ic_tv, "All TV settings", "The TV's own settings") { a.closeOverlay(); tv.open(TvSystem.Screen.ALL) }
+        tile(R.drawable.ic_sound, "Sound", "Output and audio") { host.closeOverlay(); tv.open(TvSystem.Screen.SOUND) }
+        tile(R.drawable.ic_image, "Ambient now", "Artwork and a clock") { host.closeOverlay(); host.startAmbient() }
+        tile(R.drawable.ic_gear, "Nyx TV settings", "Home, rows, Plex") { host.openNyxSettings() }
+        tile(R.drawable.ic_tv, "All TV settings", "The TV's own settings") { host.closeOverlay(); tv.open(TvSystem.Screen.ALL) }
         panel.addView(grid)
         val model = android.os.Build.MODEL.ifEmpty { "TV" }
         panel.addView(
-            a.text(
+            context.text(
                 10.5f,
                 p.sub0,
                 s = "${android.os.Build.MANUFACTURER} $model · Nyx TV ${io.github.design_nexus.nyx.tv.BuildConfig.VERSION_NAME}",
@@ -100,7 +103,7 @@ class QuickSettings(private val a: HomeActivity) : FrameLayout(a) {
             v.setOnKeyListener { _, code, e ->
                 if (e.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
                 when (code) {
-                    KeyEvent.KEYCODE_DPAD_LEFT -> if (col == 0) { a.closeOverlay(); true } else false
+                    KeyEvent.KEYCODE_DPAD_LEFT -> if (col == 0) { host.closeOverlay(); true } else false
                     KeyEvent.KEYCODE_DPAD_RIGHT -> col == 1
                     KeyEvent.KEYCODE_DPAD_UP -> row == 0
                     KeyEvent.KEYCODE_DPAD_DOWN -> i + 2 >= tiles.size
@@ -116,29 +119,29 @@ class QuickSettings(private val a: HomeActivity) : FrameLayout(a) {
         val items = ArrayList<MenuPanel.Item>()
         items += MenuPanel.Item("Off") {
             SleepTimer.cancel()
-            a.toast("Sleep timer off")
+            host.toast("Sleep timer off")
         }
         for (m in SleepTimer.CHOICES_MIN) {
             val label = SleepTimer.formatDuration(m)
             items += MenuPanel.Item(label) {
-                SleepTimer.schedule(m) { a.startSleepAmbient() }
-                a.toast("Sleep timer · $label")
+                SleepTimer.schedule(m) { host.startSleepAmbient() }
+                host.toast("Sleep timer · $label")
             }
         }
         if (tv.canOpen(TvSystem.Screen.POWER)) {
             items += MenuPanel.Item("TV power settings…") {
-                a.closeOverlay()
-                if (!tv.open(TvSystem.Screen.POWER)) a.toast("Couldn't open power settings")
+                host.closeOverlay()
+                if (!tv.open(TvSystem.Screen.POWER)) host.toast("Couldn't open power settings")
             }
         }
-        a.showMenu("Sleep timer", null, items)
+        host.showMenu("Sleep timer", null, items)
     }
 
     override fun focusSearch(focused: View?, direction: Int): View {
         val next = super.focusSearch(focused, direction)
         if (next != null && isSelfOrDescendant(next)) return next
         if (direction == FOCUS_LEFT) {
-            a.closeOverlay()
+            host.closeOverlay()
             return focused ?: this
         }
         return focused ?: first ?: this
@@ -155,12 +158,12 @@ class QuickSettings(private val a: HomeActivity) : FrameLayout(a) {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
-            a.closeOverlay(); return true
+            host.closeOverlay(); return true
         }
         if (event.action == KeyEvent.ACTION_DOWN) {
             when (event.keyCode) {
-                KeyEvent.KEYCODE_SETTINGS, KeyEvent.KEYCODE_NOTIFICATION -> { a.openQuickSettings(); return true }
-                KeyEvent.KEYCODE_TV_INPUT, KeyEvent.KEYCODE_WINDOW -> { a.openInputs(); return true }
+                KeyEvent.KEYCODE_SETTINGS, KeyEvent.KEYCODE_NOTIFICATION -> { host.openQuickSettings(); return true }
+                KeyEvent.KEYCODE_TV_INPUT, KeyEvent.KEYCODE_WINDOW -> { host.openInputs(); return true }
             }
         }
         return super.dispatchKeyEvent(event)
