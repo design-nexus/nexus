@@ -8,7 +8,7 @@ use crate::sync;
 use crate::window;
 use anyhow::Result;
 use gtk::glib;
-use nyx_tv_device::Tv;
+use nexus_device::Tv;
 
 enum Msg {
     Step(String),

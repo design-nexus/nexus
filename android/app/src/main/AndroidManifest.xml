@@ -42,13 +42,13 @@
     </queries>
 
     <application
-        android:name=".NyxTvApp"
+        android:name=".NexusApp"
         android:allowBackup="false"
         android:banner="@drawable/banner"
         android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.NyxTv"
+        android:theme="@style/Theme.Nexus"
         android:usesCleartextTraffic="true">
 
         <activity
@@ -88,15 +88,15 @@
             android:exported="false"
             android:launchMode="singleTask"
             android:screenOrientation="landscape"
-            android:theme="@style/Theme.NyxTv" />
+            android:theme="@style/Theme.Nexus" />
 
         <receiver
             android:name=".BackupReceiver"
             android:exported="true"
             android:permission="android.permission.DUMP">
             <intent-filter>
-                <action android:name="io.github.design_nexus.nyx.tv.EXPORT" />
-                <action android:name="io.github.design_nexus.nyx.tv.IMPORT" />
+                <action android:name="io.github.design_nexus.nexus.EXPORT" />
+                <action android:name="io.github.design_nexus.nexus.IMPORT" />
             </intent-filter>
         </receiver>
 

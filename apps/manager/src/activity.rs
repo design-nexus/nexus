@@ -1,5 +1,5 @@
 //! What the Manager did to each TV, kept across restarts
-//! (`$XDG_STATE_HOME/nyx-tv-manager/activity.toml`, newest 50 per TV).
+//! (`$XDG_STATE_HOME/nexus-manager/activity.toml`, newest 50 per TV).
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -77,7 +77,7 @@ fn path() -> PathBuf {
     std::env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| crate::devices::home().join(".local/state"))
-        .join("nyx-tv-manager")
+        .join("nexus-manager")
         .join("activity.toml")
 }
 

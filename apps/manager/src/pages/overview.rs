@@ -7,7 +7,7 @@ use crate::page::{self, Page};
 use crate::state::State;
 use crate::window;
 use gtk::prelude::*;
-use nyx_tv_device::NYX_TV_PKG_DEBUG;
+use nexus_device::NEXUS_PKG_DEBUG;
 use nyx_ui::widgets as w;
 use std::cell::RefCell;
 
@@ -75,38 +75,38 @@ pub fn render(st: &State) {
     let model = if o.model.is_empty() { "Android TV".to_string() } else { o.model.clone() };
     p.set_sub(&format!("{model} · Connected"));
 
-    let installed = o.nyx_package.is_some();
-    let is_debug = o.nyx_package.as_deref() == Some(NYX_TV_PKG_DEBUG);
-    let home = o.nyx_is_home();
+    let installed = o.nexus_package.is_some();
+    let is_debug = o.nexus_package.as_deref() == Some(NEXUS_PKG_DEBUG);
+    let home = o.nexus_is_home();
     let stock_off = o.stock_disabled();
-    let ver = o.nyx_version.clone().unwrap_or_else(|| "installed".into());
+    let ver = o.nexus_version.clone().unwrap_or_else(|| "installed".into());
 
     // The single next step.
     let install_action = actions::current_install_action();
     let (primary, next): (Option<gtk::Widget>, String) = if !installed {
         (
-            Some(page::primary("folder-download-symbolic", "Set up Nyx TV", actions::setup)),
-            "Next: install Nyx TV and make it the home app. A snapshot of the TV's home settings is saved first, so you can go back.".into(),
+            Some(page::primary("folder-download-symbolic", "Set up Nexus", actions::setup)),
+            "Next: install Nexus and make it the home app. A snapshot of the TV's home settings is saved first, so you can go back.".into(),
         )
     } else if !home {
         (
             Some(page::primary("user-home-symbolic", "Set as home", actions::set_home)),
-            "Next: make Nyx TV the home app. Google TV Home is turned off so it can't take the Home button back.".into(),
+            "Next: make Nexus the home app. Google TV Home is turned off so it can't take the Home button back.".into(),
         )
     } else if !stock_off {
         (
             Some(page::primary("system-shutdown-symbolic", "Turn off Google TV Home", || {
                 actions::set_google_home(false, || {})
             })),
-            "Nyx TV is the home app, but Google TV Home is still on and can take the Home button back.".into(),
+            "Nexus is the home app, but Google TV Home is still on and can take the Home button back.".into(),
         )
     } else if let InstallAction::Update(v) = &install_action {
         (
             Some(page::primary("folder-download-symbolic", &format!("Update to {v}"), actions::install)),
-            format!("All set. Nyx TV {v} is ready to install over {ver}."),
+            format!("All set. Nexus {v} is ready to install over {ver}."),
         )
     } else {
-        (None, "All set. Pressing Home on the remote opens Nyx TV.".into())
+        (None, "All set. Pressing Home on the remote opens Nexus.".into())
     };
     let mut head_actions = vec![rename];
     if let Some(b) = primary {
@@ -129,7 +129,7 @@ pub fn render(st: &State) {
         step(true, "Connected", &conn),
         step(
             installed,
-            "Nyx TV installed",
+            "Nexus installed",
             &if !installed {
                 "Not installed".to_string()
             } else if is_debug {
@@ -138,7 +138,7 @@ pub fn render(st: &State) {
                 ver.clone()
             },
         ),
-        step(home, "Home app", if home { "Nyx TV" } else { o.home_label() }),
+        step(home, "Home app", if home { "Nexus" } else { o.home_label() }),
         step(stock_off, "Google TV Home off", if stock_off { "Off" } else { "On" }),
     ] {
         steps.insert(&s, -1);
@@ -167,8 +167,8 @@ pub fn render(st: &State) {
         ("Firmware", o.fingerprint.clone(), true),
         ("Connection", tv.serial.clone(), true),
         (
-            "Nyx TV",
-            match (&o.nyx_package, &o.nyx_version) {
+            "Nexus",
+            match (&o.nexus_package, &o.nexus_version) {
                 (Some(_), Some(v)) if is_debug => format!("{v} · debug build"),
                 (Some(_), Some(v)) => v.clone(),
                 (Some(_), None) => "Installed".into(),

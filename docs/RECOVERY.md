@@ -28,8 +28,8 @@ adb -s SERIAL shell cmd package set-home-activity \
   com.google.android.apps.tv.launcherx/.home.HomeActivity
 ```
 
-Then press Home. If Nyx still appears, clear its default in the TV’s app settings or run `set-home-activity` again after confirming the stock package is enabled.
+Then press Home. If Nexus still appears, clear its default in the TV’s app settings or run `set-home-activity` again after confirming the stock package is enabled.
 
 ## After a firmware update
 
-Stock packages are often re-enabled. Use **Launcher → Repair** in Manager (or snapshot + set-home + disable-stock again) once Nyx TV is still installed.
+Stock packages are often re-enabled. Use **Launcher → Repair** in Manager (or snapshot + set-home + disable-stock again) once Nexus is still installed.

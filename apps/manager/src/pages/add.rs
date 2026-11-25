@@ -9,7 +9,7 @@ use crate::window;
 use anyhow::{bail, Result};
 use gtk::glib;
 use gtk::prelude::*;
-use nyx_tv_adb::Adb;
+use nexus_adb::Adb;
 use nyx_ui::widgets as w;
 use std::cell::RefCell;
 use std::rc::Rc;

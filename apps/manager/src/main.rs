@@ -1,4 +1,4 @@
-//! TV Manager — install and manage Nyx TV on Android TVs over adb.
+//! TV Manager — install and manage Nexus on Android TVs over adb.
 
 mod actions;
 mod activity;
@@ -16,7 +16,7 @@ mod window;
 use gtk::prelude::*;
 use gtk::glib;
 
-pub const APP_ID: &str = "io.github.design_nexus.nyx.TvManager";
+pub const APP_ID: &str = "io.github.design_nexus.nexus.Manager";
 
 fn main() -> glib::ExitCode {
     if std::env::var_os("GSK_RENDERER").is_none() {
@@ -24,7 +24,7 @@ fn main() -> glib::ExitCode {
         unsafe { std::env::set_var("GSK_RENDERER", "gl") };
     }
 
-    let id = std::env::var("NYX_TV_MANAGER_APP_ID").unwrap_or_else(|_| APP_ID.to_string());
+    let id = std::env::var("NEXUS_MANAGER_APP_ID").unwrap_or_else(|_| APP_ID.to_string());
     let app = gtk::Application::builder()
         .application_id(&id)
         .build();
@@ -34,6 +34,7 @@ fn main() -> glib::ExitCode {
             win.present();
             return;
         }
+        devices::migrate_legacy_xdg();
         theme::install();
         window::build(app);
     });

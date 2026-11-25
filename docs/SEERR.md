@@ -1,12 +1,12 @@
 # Seerr Integration
 
-Nyx TV includes optional, native **Seerr** integration (`:provider-seerr`) for discovering trending/popular/upcoming titles, requesting movies and TV seasons, and tracking requests from one unified interface.
+Nexus includes optional, native **Seerr** integration (`:provider-seerr`) for discovering trending/popular/upcoming titles, requesting movies and TV seasons, and tracking requests from one unified interface.
 
 When Seerr is not configured, the **Discover** tab and all Seerr-dependent UI remain hidden.
 
 ## Setup
 
-1. Open **Settings › Seerr** in Nyx TV.
+1. Open **Settings › Seerr** in Nexus.
 2. Choose an authentication method:
    - **Sign in with Plex** *(recommended for shared Android TVs)*: uses your linked Plex account token (`POST /api/v1/auth/plex`) to obtain a user-scoped `connect.sid` session cookie.
    - **Sign in with Seerr account**: signs in with a local Seerr email/username and password (`POST /api/v1/auth/local`).
@@ -28,4 +28,4 @@ Credentials are encrypted at rest with Android Keystore AES-256-GCM (`SecureSess
 
 - **Physical TV Verification**: Automated tests cover `:provider-seerr` (`MockWebServer`), `:provider-plex` GUID parsing, availability resolution, unified search deduplication, and `:app:assembleDebug`. D-pad focus ergonomics, scrolling performance, and live end-to-end playback on physical Android TV / TCL Google TV hardware should be verified on-device.
 - **4K / Custom Radarr/Sonarr Profiles**: Requests currently use the Seerr server's default profile and root folder (`is4k = false`).
-- **Session Expiry**: When a `connect.sid` cookie expires (`401`), Nyx TV marks Seerr offline and prompts the user to re-authenticate in **Settings › Seerr**.
+- **Session Expiry**: When a `connect.sid` cookie expires (`401`), Nexus marks Seerr offline and prompts the user to re-authenticate in **Settings › Seerr**.

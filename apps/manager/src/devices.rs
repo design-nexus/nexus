@@ -1,4 +1,4 @@
-//! Saved TVs under XDG config (`nyx-tv-manager/devices.toml`).
+//! Saved TVs under XDG config (`nexus-manager/devices.toml`).
 //!
 //! A TV is known by its host (IP address) rather than `host:port`: wireless
 //! debugging picks a new port after every restart. Older files that only have
@@ -145,6 +145,13 @@ fn config_path() -> PathBuf {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| home().join(".config"));
+    base.join("nexus-manager").join("devices.toml")
+}
+
+fn legacy_config_path() -> PathBuf {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home().join(".config"));
     base.join("nyx-tv-manager").join("devices.toml")
 }
 
@@ -154,6 +161,58 @@ pub fn home() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+/// Copy Nyx TV Manager config/state into Nexus Manager paths once.
+pub fn migrate_legacy_xdg() {
+    let pairs = [
+        (
+            home().join(".config/nyx-tv-manager"),
+            home().join(".config/nexus-manager"),
+        ),
+        (
+            home().join(".local/share/nyx-tv-manager"),
+            home().join(".local/share/nexus-manager"),
+        ),
+        (
+            home().join(".local/state/nyx-tv-manager"),
+            home().join(".local/state/nexus-manager"),
+        ),
+    ];
+    let xdg_config = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
+    let xdg_data = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from);
+    let xdg_state = std::env::var_os("XDG_STATE_HOME").map(PathBuf::from);
+    let mut all = pairs.to_vec();
+    if let Some(c) = xdg_config {
+        all.push((c.join("nyx-tv-manager"), c.join("nexus-manager")));
+    }
+    if let Some(d) = xdg_data {
+        all.push((d.join("nyx-tv-manager"), d.join("nexus-manager")));
+    }
+    if let Some(s) = xdg_state {
+        all.push((s.join("nyx-tv-manager"), s.join("nexus-manager")));
+    }
+    for (from, to) in all {
+        if !from.is_dir() || to.exists() {
+            continue;
+        }
+        let _ = copy_dir_recursive(&from, &to);
+    }
+}
+
+fn copy_dir_recursive(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let src = entry.path();
+        let dst = to.join(entry.file_name());
+        if src.is_dir() {
+            copy_dir_recursive(&src, &dst)?;
+        } else if !dst.exists() {
+            fs::copy(&src, &dst)?;
+        }
+    }
+    Ok(())
+}
+
 pub fn parse(text: &str) -> DeviceFile {
     let mut file: DeviceFile = toml::from_str(text).unwrap_or_default();
     file.migrate();
@@ -161,7 +220,8 @@ pub fn parse(text: &str) -> DeviceFile {
 }
 
 pub fn load() -> DeviceFile {
-    match fs::read_to_string(config_path()) {
+    migrate_legacy_xdg();
+    match fs::read_to_string(config_path()).or_else(|_| fs::read_to_string(legacy_config_path())) {
         Ok(text) => parse(&text),
         Err(_) => DeviceFile::default(),
     }

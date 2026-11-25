@@ -25,15 +25,15 @@ model=$(run shell getprop ro.product.model | tr -d '\r')
 home=$(run shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME 2>/dev/null | tr -d '\r' | tail -1 || true)
 printf 'fingerprint=%s\nmodel=%s\nhome=%s\n' "$fp" "$model" "$home" >"$out/meta.env"
 
-# Resolve Nyx package if installed.
+# Resolve Nexus package if installed.
 nyx_pkg=
-for p in io.github.design_nexus.nyx.tv.debug io.github.design_nexus.nyx.tv; do
+for p in io.github.design_nexus.nexus.debug io.github.design_nexus.nexus; do
   if run shell pm path "$p" 2>/dev/null | grep -q package:; then
     nyx_pkg=$p
     break
   fi
 done
-printf 'nyx_package=%s\n' "$nyx_pkg" >>"$out/meta.env"
+printf 'nexus_package=%s\n' "$nyx_pkg" >>"$out/meta.env"
 
 pss_mb() {
   local pkg=$1
@@ -53,17 +53,17 @@ for line in text.splitlines():
 PY
 }
 
-# Nyx HomeActivity component (debug vs release).
+# Nexus HomeActivity component (debug vs release).
 nyx_home=
 case $nyx_pkg in
-  *.debug) nyx_home="$nyx_pkg/io.github.design_nexus.nyx.tv.ui.HomeActivity" ;;
-  io.github.design_nexus.nyx.tv) nyx_home="$nyx_pkg/io.github.design_nexus.nyx.tv.ui.HomeActivity" ;;
+  *.debug) nyx_home="$nyx_pkg/io.github.design_nexus.nexus.ui.HomeActivity" ;;
+  io.github.design_nexus.nexus) nyx_home="$nyx_pkg/io.github.design_nexus.nexus.ui.HomeActivity" ;;
 esac
 nyx_is_home=0
 [[ -n $nyx_pkg && $home == *"$nyx_pkg"* ]] && nyx_is_home=1
 printf 'nyx_is_home=%s\nnyx_home=%s\n' "$nyx_is_home" "$nyx_home" >>"$out/meta.env"
 
-# Cold / warm: prefer Home button when Nyx is HOME; else am start -W.
+# Cold / warm: prefer Home button when Nexus is HOME; else am start -W.
 cold_ms=
 warm_ms=
 if [[ -n $nyx_pkg && -n $nyx_home ]]; then
@@ -112,16 +112,16 @@ if [[ -n $nyx_pkg && -n $nyx_home ]]; then
   printf 'warm_ms=%s\n' "${warm_ms:-}" >"$out/warm.txt"
   say "Warm start → ${warm_ms:-timeout} ms"
 
-  say "Nyx PSS (after warm launch)"
+  say "Nexus PSS (after warm launch)"
   sleep 2
   # Ensure process is up for meminfo.
   run shell am start -n "$nyx_home" >/dev/null 2>&1 || true
   sleep 2
   nyx_pss=$(pss_mb "$nyx_pkg" || true)
   printf 'nyx_pss_mb=%s\n' "${nyx_pss:-}" >"$out/nyx-pss.txt"
-  say "Nyx TOTAL PSS → ${nyx_pss:-?} MB"
+  say "Nexus TOTAL PSS → ${nyx_pss:-?} MB"
 else
-  say "Nyx TV not installed — skipping cold/warm/PSS for Nyx"
+  say "Nexus not installed — skipping cold/warm/PSS for Nexus"
 fi
 
 # Idle CPU sample (top once).
@@ -161,7 +161,7 @@ serial=$SERIAL
 fingerprint=$fp
 model=$model
 home=$home
-nyx_package=$nyx_pkg
+nexus_package=$nyx_pkg
 cold_ms=${cold_ms:-}
 warm_ms=${warm_ms:-}
 nyx_pss_mb=${nyx_pss:-}

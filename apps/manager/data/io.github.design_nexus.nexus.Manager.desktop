@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Nexus Manager
+GenericName=Nexus Manager
+Comment=Install and manage Nexus on Android TVs over adb
+Exec=nexus-manager
+Icon=io.github.design_nexus.nexus.Manager
+Terminal=false
+Categories=Utility;GTK;
+Keywords=tv;android;adb;plex;launcher;
+StartupNotify=true
+StartupWMClass=io.github.design_nexus.nexus.Manager
+SingleMainWindow=true

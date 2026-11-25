@@ -5,7 +5,7 @@
 #   ./install.sh          # same
 set -euo pipefail
 
-REPO="design-nexus/nyx-tv"
+REPO="design-nexus/nexus"
 ALL=(manager)
 (($#)) || set -- manager
 
@@ -18,9 +18,9 @@ app_info() {
   case $1 in
     manager)
       dir=manager
-      pkg=nyx-tv-manager
-      bins=nyx-tv-manager
-      ids=TvManager
+      pkg=nexus-manager
+      bins=nexus-manager
+      ids=Manager
       deps="gtk4 android-tools"
       ;;
     *) return 1 ;;
@@ -42,7 +42,7 @@ here=""
 [[ -n ${BASH_SOURCE[0]:-} && -f ${BASH_SOURCE[0]} ]] && here=$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 if [[ -z $here || ! -f $here/Cargo.toml || ! -d $here/crates ]]; then
-  die "Run install.sh from a Nyx TV checkout that has Cargo.toml and crates/."
+  die "Run install.sh from a Nexus checkout that has Cargo.toml and crates/."
 fi
 src=$here
 
@@ -81,9 +81,9 @@ for a in "${apps[@]}"; do
   done
   if [[ -n $ids ]]; then
     for id in $ids; do
-      desktop="io.github.design_nexus.nyx.$id.desktop"
+      desktop="io.github.design_nexus.nexus.$id.desktop"
       [[ -f $d/data/$desktop ]] && install -Dm644 "$d/data/$desktop" "$desk/$desktop"
-      icon="io.github.design_nexus.nyx.$id.svg"
+      icon="io.github.design_nexus.nexus.$id.svg"
       [[ -f $d/data/icons/$icon ]] && install -Dm644 "$d/data/icons/$icon" "$icons/$icon"
     done
   fi
@@ -98,10 +98,10 @@ fi
 
 # Per-model Debloat catalogs (Phase 5) — Manager falls back to built-in if missing.
 if [[ -d $src/data/debloat ]]; then
-  debloat_dst="$share/nyx-tv-manager/debloat"
+  debloat_dst="$share/nexus-manager/debloat"
   mkdir -p "$debloat_dst"
   cp -a "$src/data/debloat/." "$debloat_dst/"
   say "Installed Debloat catalogs → $debloat_dst"
 fi
 
-say "Installed. Run: nyx-tv-manager"
+say "Installed. Run: nexus-manager"

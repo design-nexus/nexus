@@ -7,8 +7,8 @@ use crate::page;
 use crate::state::{self, CheckRow};
 use crate::sync;
 use anyhow::{anyhow, Result};
-use nyx_tv_device::{
-    apk_info, build_release_apk_with, find_local_apk, Tv, NYX_TV_PKG, NYX_TV_PKG_DEBUG,
+use nexus_device::{
+    apk_info, build_release_apk_with, find_local_apk, Tv, NEXUS_PKG, NEXUS_PKG_DEBUG,
 };
 use std::path::PathBuf;
 
@@ -55,15 +55,15 @@ pub fn current_install_action() -> InstallAction {
     state::get(|s| {
         let o = s.overview();
         install_action(
-            o.and_then(|o| o.nyx_version.as_deref()),
-            o.and_then(|o| o.nyx_package.as_deref()) == Some(NYX_TV_PKG_DEBUG),
+            o.and_then(|o| o.nexus_version.as_deref()),
+            o.and_then(|o| o.nexus_package.as_deref()) == Some(NEXUS_PKG_DEBUG),
             s.local.release.as_ref().map(|i| i.version_name.as_str()),
         )
     })
 }
 
 fn build(ctx: &Ctx) -> Result<PathBuf> {
-    ctx.step("Building Nyx TV from source (Gradle)…");
+    ctx.step("Building Nexus from source (Gradle)…");
     let mut forward = |line: &str| ctx.log(line);
     build_release_apk_with(&devices::repo_root(), &mut forward)
 }
@@ -75,25 +75,27 @@ fn install_release(ctx: &Ctx, tv: &Tv, force_build: bool) -> Result<String> {
         _ => build(ctx)?,
     };
     let ver = apk_info(&apk).version_name;
-    ctx.step(&format!("Installing Nyx TV {ver} on the TV…"));
+    ctx.step(&format!("Installing Nexus {ver} on the TV…"));
     ctx.log(&format!("adb install -r {}", apk.display()));
     tv.install_apk(&apk, true)?;
-    if tv.has_package(NYX_TV_PKG_DEBUG).unwrap_or(false) {
+    if tv.has_package(NEXUS_PKG_DEBUG).unwrap_or(false) {
         ctx.step("Removing the debug build…");
-        let _ = tv.uninstall_package(NYX_TV_PKG_DEBUG, true);
+        let _ = tv.uninstall_package(NEXUS_PKG_DEBUG, true);
     }
-    Ok(format!("Installed Nyx TV {ver}"))
+    let _ = tv.uninstall_package(nexus_device::LEGACY_NYX_TV_PKG_DEBUG, true);
+    let _ = tv.uninstall_package(nexus_device::LEGACY_NYX_TV_PKG, true);
+    Ok(format!("Installed Nexus {ver}"))
 }
 
 fn set_home_on(ctx: &Ctx, tv: &Tv) -> Result<String> {
     ctx.step("Saving a snapshot of the TV's home settings…");
     let component = tv.home_component_for_installed()?;
-    ctx.step("Setting Nyx TV as home and turning off Google TV Home…");
+    ctx.step("Setting Nexus as home and turning off Google TV Home…");
     let snap = tv.replace_launcher(&component, true)?;
     if let Some(p) = &snap.path {
         ctx.log(&format!("Snapshot: {}", p.display()));
     }
-    Ok("Nyx TV is now the home app".into())
+    Ok("Nexus is now the home app".into())
 }
 
 fn after_local(_: bool) {
@@ -116,7 +118,7 @@ pub fn install_debug() {
         move |ctx, tv| {
             ctx.step("Installing the debug build on the TV…");
             tv.install_apk(&path, true)?;
-            Ok("Installed the Nyx TV debug build".into())
+            Ok("Installed the Nexus debug build".into())
         },
         |_| {},
     );
@@ -124,10 +126,10 @@ pub fn install_debug() {
 
 pub fn build_only() {
     ops::run(
-        "Build Nyx TV",
+        "Build Nexus",
         |ctx| {
             let apk = build(ctx)?;
-            Ok(format!("Built Nyx TV {}", apk_info(&apk).version_name))
+            Ok(format!("Built Nexus {}", apk_info(&apk).version_name))
         },
         after_local,
     );
@@ -172,20 +174,20 @@ pub fn install_file() {
 /// Install if needed, then set as home. One click from Overview.
 pub fn setup() {
     page::confirm(
-        "Set up Nyx TV?",
-        "Installs Nyx TV, saves a snapshot of the TV's home settings, makes Nyx TV the home app and turns off Google TV Home. Nothing is uninstalled, and you can go back from Home screen.",
+        "Set up Nexus?",
+        "Installs Nexus, saves a snapshot of the TV's home settings, makes Nexus the home app and turns off Google TV Home. Nothing is uninstalled, and you can go back from Home screen.",
         "Set up",
         || {
             ops::run_tv(
-                "Set up Nyx TV",
+                "Set up Nexus",
                 |ctx, tv| {
-                    let installed = tv.has_package(NYX_TV_PKG).unwrap_or(false)
-                        || tv.has_package(NYX_TV_PKG_DEBUG).unwrap_or(false);
+                    let installed = tv.has_package(NEXUS_PKG).unwrap_or(false)
+                        || tv.has_package(NEXUS_PKG_DEBUG).unwrap_or(false);
                     if !installed {
                         install_release(ctx, &tv, false)?;
                     }
                     set_home_on(ctx, &tv)?;
-                    Ok("Nyx TV is set up as the home app".into())
+                    Ok("Nexus is set up as the home app".into())
                 },
                 |_| {
                     sync::refresh_local();
@@ -198,11 +200,11 @@ pub fn setup() {
 
 pub fn set_home() {
     page::confirm(
-        "Set Nyx TV as home?",
-        "Saves a snapshot of the TV's home settings, makes Nyx TV the home app and turns off Google TV Home so it can't take the Home button back. Nothing is uninstalled.",
+        "Set Nexus as home?",
+        "Saves a snapshot of the TV's home settings, makes Nexus the home app and turns off Google TV Home so it can't take the Home button back. Nothing is uninstalled.",
         "Set as home",
         || {
-            ops::run_tv("Set Nyx TV as home", |ctx, tv| set_home_on(ctx, &tv), |_| {
+            ops::run_tv("Set Nexus as home", |ctx, tv| set_home_on(ctx, &tv), |_| {
                 sync::refresh_snapshots();
             });
         },
@@ -212,18 +214,18 @@ pub fn set_home() {
 pub fn repair() {
     page::confirm(
         "Repair the home app?",
-        "Saves a new snapshot, then makes Nyx TV the home app again and turns Google TV Home off.",
+        "Saves a new snapshot, then makes Nexus the home app again and turns Google TV Home off.",
         "Repair",
         || {
             ops::run_tv(
                 "Repair home app",
                 |ctx, tv| {
-                    ctx.step("Making Nyx TV the home app again…");
+                    ctx.step("Making Nexus the home app again…");
                     let snap = tv.repair(true)?;
                     if let Some(p) = &snap.path {
                         ctx.log(&format!("Snapshot: {}", p.display()));
                     }
-                    Ok("Nyx TV is the home app again".into())
+                    Ok("Nexus is the home app again".into())
                 },
                 |_| sync::refresh_snapshots(),
             );
@@ -264,19 +266,21 @@ pub fn set_google_home(enabled: bool, on_cancel: impl FnOnce() + 'static) {
     }
 }
 
-/// Go back to Google TV Home (and optionally remove Nyx TV).
+/// Go back to Google TV Home (and optionally remove Nexus).
 pub fn undo(uninstall: bool) {
-    let name = if uninstall { "Remove Nyx TV" } else { "Go back to Google TV Home" };
+    let name = if uninstall { "Remove Nexus" } else { "Go back to Google TV Home" };
     ops::run_tv(
         name,
         move |ctx, tv| {
             ctx.step("Turning Google TV Home on and making it the home app…");
             tv.restore_stock_home(true)?;
             if uninstall {
-                ctx.step("Uninstalling Nyx TV…");
-                let _ = tv.uninstall_package(NYX_TV_PKG_DEBUG, true);
-                let _ = tv.uninstall_package(NYX_TV_PKG, true);
-                Ok("Back on Google TV Home; Nyx TV removed".into())
+                ctx.step("Uninstalling Nexus…");
+                let _ = tv.uninstall_package(NEXUS_PKG_DEBUG, true);
+                let _ = tv.uninstall_package(NEXUS_PKG, true);
+                let _ = tv.uninstall_package(nexus_device::LEGACY_NYX_TV_PKG_DEBUG, true);
+                let _ = tv.uninstall_package(nexus_device::LEGACY_NYX_TV_PKG, true);
+                Ok("Back on Google TV Home; Nexus removed".into())
             } else {
                 Ok("Back on Google TV Home".into())
             }
@@ -285,29 +289,34 @@ pub fn undo(uninstall: bool) {
     );
 }
 
-/// Uninstall Nyx TV. If it's the home app, Google TV Home comes back first
+/// Uninstall Nexus. If it's the home app, Google TV Home comes back first
 /// so the TV is never left without one.
 pub fn uninstall() {
-    let was_home = state::get(|s| s.overview().is_some_and(|o| o.nyx_is_home()));
+    let was_home = state::get(|s| s.overview().is_some_and(|o| o.nexus_is_home()));
     ops::run_tv(
-        "Uninstall Nyx TV",
+        "Uninstall Nexus",
         move |ctx, tv| {
             if was_home {
                 ctx.step("Turning Google TV Home back on first…");
                 tv.restore_stock_home(true)?;
             }
-            ctx.step("Uninstalling Nyx TV…");
+            ctx.step("Uninstalling Nexus…");
             let mut removed = 0;
-            for pkg in [NYX_TV_PKG_DEBUG, NYX_TV_PKG] {
+            for pkg in [
+                NEXUS_PKG_DEBUG,
+                NEXUS_PKG,
+                nexus_device::LEGACY_NYX_TV_PKG_DEBUG,
+                nexus_device::LEGACY_NYX_TV_PKG,
+            ] {
                 if tv.has_package(pkg).unwrap_or(false) {
                     tv.uninstall_package(pkg, true)?;
                     removed += 1;
                 }
             }
             Ok(if removed == 0 {
-                "Nyx TV wasn't installed".into()
+                "Nexus wasn't installed".into()
             } else {
-                "Uninstalled Nyx TV".into()
+                "Uninstalled Nexus".into()
             })
         },
         |_| {},
@@ -366,7 +375,7 @@ pub fn run_check() {
             for l in &report.lines {
                 ctx.log(l);
             }
-            let still = nyx_tv_adb::Adb::devices()
+            let still = nexus_adb::Adb::devices()
                 .map(|l| l.iter().any(|d| d.serial == serial && d.state == "device"))
                 .unwrap_or(false);
             let rows = check_rows(&report.lines, report.settings_ok, report.play_ok, still);
@@ -408,7 +417,7 @@ fn check_rows(lines: &[String], settings_ok: bool, play_ok: bool, still: bool) -
     vec![
         CheckRow {
             ok: Some(!fail("FAIL: Home didn't open")),
-            title: "Home button opens Nyx TV".into(),
+            title: "Home button opens Nexus".into(),
             detail: find(lines, "Home button").unwrap_or("").to_string(),
         },
         CheckRow {
@@ -428,7 +437,7 @@ fn check_rows(lines: &[String], settings_ok: bool, play_ok: bool, still: bool) -
         },
         CheckRow {
             ok: Some(!fail("FAIL: Home didn't return")),
-            title: "Home brings Nyx TV back".into(),
+            title: "Home brings Nexus back".into(),
             detail: find(lines, "Home again").unwrap_or("").to_string(),
         },
         CheckRow {

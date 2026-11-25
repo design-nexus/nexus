@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="ambient_name">Nyx TV Ambient</string>
-    <string name="a11y_fallback_name">Nyx TV remote helper</string>
-    <string name="a11y_fallback_desc">Maps the remote Settings/gear button to Nyx Quick Settings (Google TV otherwise swallows it). Optionally brings Nyx TV back if stock Home still opens. Turn on in Accessibility.</string>
+    <string name="ambient_name">Nexus Ambient</string>
+    <string name="a11y_fallback_name">Nexus remote helper</string>
+    <string name="a11y_fallback_desc">Maps the remote Settings/gear button to Nexus Quick Settings (Google TV otherwise swallows it). Optionally brings Nexus back if stock Home still opens. Turn on in Accessibility.</string>
 </resources>

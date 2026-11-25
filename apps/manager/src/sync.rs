@@ -6,8 +6,8 @@ use crate::ops;
 use crate::state::{self, Found, LocalBuilds, Load, TvView};
 use anyhow::{bail, Result};
 use gtk::glib;
-use nyx_tv_adb::Adb;
-use nyx_tv_device::{apk_info, find_local_apk, Tv};
+use nexus_adb::Adb;
+use nexus_device::{apk_info, find_local_apk, Tv};
 use std::cell::Cell;
 use std::collections::HashSet;
 
@@ -244,7 +244,7 @@ pub fn refresh_debloat() {
     );
 }
 
-/// Metrics and the Nyx TV log for Diagnostics.
+/// Metrics and the Nexus log for Diagnostics.
 pub fn refresh_diag() {
     let Some((key, serial)) = selected_serial() else {
         return;

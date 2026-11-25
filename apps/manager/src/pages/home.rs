@@ -1,4 +1,4 @@
-//! Home screen: which app the Home button opens, what setting Nyx TV as home
+//! Home screen: which app the Home button opens, what setting Nexus as home
 //! changes, a check that it works, snapshots to go back to, and undo.
 
 use crate::actions;
@@ -6,7 +6,7 @@ use crate::activity;
 use crate::page::{self, Page};
 use crate::state::{Load, State};
 use gtk::prelude::*;
-use nyx_tv_device::Overview;
+use nexus_device::Overview;
 use nyx_ui::widgets as w;
 use std::cell::RefCell;
 
@@ -42,7 +42,7 @@ fn changes_table(o: &Overview, pending: bool) -> gtk::Grid {
         g.attach(&l, i as i32, 0, 1, 1);
     }
     let rows: Vec<(&str, String, String, bool)> = vec![
-        ("Home app", o.home_label().to_string(), "Nyx TV".into(), o.home_label() != "Nyx TV"),
+        ("Home app", o.home_label().to_string(), "Nexus".into(), o.home_label() != "Nexus"),
         (
             "Google TV Home",
             state_word(&o.stock_state).to_string(),
@@ -79,8 +79,8 @@ pub fn render(st: &State) {
         return;
     }
     let Some(o) = st.overview() else { return };
-    let installed = o.nyx_package.is_some();
-    let home = o.nyx_is_home();
+    let installed = o.nexus_package.is_some();
+    let home = o.nexus_is_home();
     let fp = o.fingerprint.clone();
     let snaps: Vec<_> = st
         .snapshots
@@ -93,7 +93,7 @@ pub fn render(st: &State) {
 
     if !installed {
         p.add(&page::banner(
-            "Nyx TV isn't on this TV yet. Install it first; then it can become the home app.",
+            "Nexus isn't on this TV yet. Install it first; then it can become the home app.",
             false,
             Some(("Install", Box::new(|| crate::window::show_section("install")))),
         ));
@@ -114,7 +114,7 @@ pub fn render(st: &State) {
     rows.append(&changes_table(o, pending));
     if pending {
         rows.append(&page::dim(
-            "Setting Nyx TV as home saves a snapshot first and never uninstalls anything. Wireless debugging stays on so you can come back here.",
+            "Setting Nexus as home saves a snapshot first and never uninstalls anything. Wireless debugging stays on so you can come back here.",
         ));
     }
     let stock_on = !o.stock_disabled();
@@ -127,7 +127,7 @@ pub fn render(st: &State) {
     rows.append(&page::row(
         "Google TV Home",
         if stock_on {
-            "On. It can take the Home button back from Nyx TV."
+            "On. It can take the Home button back from Nexus."
         } else {
             "Off. Still installed; turn it on again here."
         },
@@ -148,7 +148,7 @@ pub fn render(st: &State) {
         );
         match &st.check {
             None => rows.append(&page::dim(
-                "Presses Home on the TV, opens Settings and the Play Store, and checks Nyx TV comes back each time. Takes about ten seconds.",
+                "Presses Home on the TV, opens Settings and the Play Store, and checks Nexus comes back each time. Takes about ten seconds.",
             )),
             Some(c) => {
                 for r in &c.rows {
@@ -169,7 +169,7 @@ pub fn render(st: &State) {
         }
         rows.append(&page::row(
             "Restart the TV",
-            "Confirms Nyx TV is still the home app after a restart.",
+            "Confirms Nexus is still the home app after a restart.",
             None,
             &[page::danger("Restart", "Restart now?", actions::restart_tv)],
         ));
@@ -191,7 +191,7 @@ pub fn render(st: &State) {
             let mine: Vec<_> = all.iter().filter(|(_, s)| s.fingerprint == fp).collect();
             if mine.is_empty() {
                 rows.append(&page::dim(
-                    "No snapshots for this TV yet. One is saved automatically before Nyx TV becomes the home app.",
+                    "No snapshots for this TV yet. One is saved automatically before Nexus becomes the home app.",
                 ));
             }
             for (path, snap) in mine.iter().take(8) {
@@ -199,7 +199,7 @@ pub fn render(st: &State) {
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_default();
-                let home_was = if snap.home.contains("nyx") { "Nyx TV" } else { "Google TV" };
+                let home_was = if snap.home.contains("nexus") || snap.home.contains("nyx.tv") { "Nexus" } else { "Google TV" };
                 let desc = format!(
                     "Home app: {home_was} · Google TV Home {}",
                     state_word(&snap.stock_state).to_lowercase()
@@ -222,13 +222,13 @@ pub fn render(st: &State) {
         let (card, rows) = page::card("Go back", &[]);
         rows.append(&page::row(
             "Go back to Google TV Home",
-            "Turns Google TV Home on and makes it the home app. Nyx TV stays installed.",
+            "Turns Google TV Home on and makes it the home app. Nexus stays installed.",
             None,
             &[page::danger("Go back", "Go back now?", || actions::undo(false))],
         ));
         rows.append(&page::row(
-            "Go back and remove Nyx TV",
-            "The same, then uninstalls Nyx TV and its settings.",
+            "Go back and remove Nexus",
+            "The same, then uninstalls Nexus and its settings.",
             None,
             &[page::danger("Remove", "Remove now?", || actions::undo(true))],
         ));

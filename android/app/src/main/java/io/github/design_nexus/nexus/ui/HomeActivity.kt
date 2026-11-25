@@ -1,0 +1,836 @@
+package io.github.design_nexus.nexus.ui
+
+import android.app.Activity
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.res.ColorStateList
+import android.graphics.Outline
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.text.format.DateFormat
+import android.util.Log
+import android.view.Gravity
+import android.view.KeyEvent
+import android.view.View
+import android.view.ViewOutlineProvider
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
+import coil3.request.Disposable
+import coil3.request.ImageRequest
+import coil3.request.target
+import io.github.design_nexus.nexus.NexusApp
+import io.github.design_nexus.nexus.R
+import io.github.design_nexus.nexus.core.AmbientSource
+import io.github.design_nexus.nexus.core.LauncherConfig
+import io.github.design_nexus.nexus.data.AppEntry
+import io.github.design_nexus.nexus.device.TvSystem
+import io.github.design_nexus.nexus.media.MediaItem
+import io.github.design_nexus.nexus.media.PlaybackOutcome
+import io.github.design_nexus.nexus.media.ProviderStatus
+import io.github.design_nexus.nexus.playback.PlayableResolver
+import io.github.design_nexus.nexus.ui.pages.AppsPage
+import io.github.design_nexus.nexus.ui.pages.DetailsPage
+import io.github.design_nexus.nexus.ui.pages.DiscoverPage
+import io.github.design_nexus.nexus.ui.pages.HomePage
+import io.github.design_nexus.nexus.ui.pages.LibraryPage
+import io.github.design_nexus.nexus.ui.pages.SearchPage
+import io.github.design_nexus.nexus.ui.pages.SettingsPage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import java.util.Date
+
+/** A screen inside the launcher. Pages are plain views swapped in one activity. */
+abstract class Page(val a: HomeActivity) {
+    abstract val view: View
+    /** The navigation tab this page belongs to, if any. */
+    open val tab: String? = null
+    /** Focus the page's natural first element. */
+    abstract fun focusDefault()
+    open fun onShow() {}
+    open fun onHide() {}
+    /** Handle Back inside the page (close a mode, move to the top); false to leave the page. */
+    open fun onBack(): Boolean = false
+    open fun onConfigChanged(c: LauncherConfig) {}
+    open fun onAppsChanged(apps: List<AppEntry>) {}
+}
+
+class HomeActivity : Activity(), QuickSettingsHost {
+    val app get() = application as NexusApp
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    override lateinit var palette: Palette private set
+    var config: LauncherConfig = LauncherConfig()
+        private set
+    override val clock24h: Boolean get() = config.clock24h
+    var apps: List<AppEntry> = emptyList()
+        private set
+
+    private lateinit var root: FrameLayout
+    private lateinit var backdrop: ImageView
+    private lateinit var scrim: View
+    private lateinit var pageHost: FrameLayout
+    private lateinit var overlayHost: FrameLayout
+    private lateinit var nav: LinearLayout
+    private lateinit var clock: TextView
+    private lateinit var banner: TextView
+    private lateinit var status: TextView
+    private val tabs = LinkedHashMap<String, TextView>()
+    private lateinit var searchBtn: ImageView
+    private lateinit var gearBtn: ImageView
+    private lateinit var avatar: FrameLayout
+    private lateinit var avatarImage: ImageView
+    private lateinit var avatarLetter: TextView
+
+    private val stack = ArrayList<Page>()
+    private val roots = HashMap<String, Page>()
+    private var backdropReq: Disposable? = null
+    private var backdropPath: String? = null
+    private var avatarReq: Disposable? = null
+    private var avatarThumbLoaded: String? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private var overlay: View? = null
+    private var overlayReturn: View? = null
+    private var ambient: AmbientView? = null
+    private var lastKeyAt = SystemClock.uptimeMillis()
+    private var backLongPressHandled = false
+    private var visible = false
+    private var statusJob: Job? = null
+    private var firstFrameLogged = false
+
+    private val tick = object : Runnable {
+        override fun run() {
+            updateClock()
+            checkIdle()
+            handler.postDelayed(this, 30_000)
+        }
+    }
+
+    private val packages = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) {
+            i.data?.schemeSpecificPart?.let { app.apps.forget(it) }
+            reloadApps()
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        scope.launch {
+            config = app.config.load()
+            TvSystem(this@HomeActivity).syncScreensaver(config.ambient.enabled)
+            palette = Palette.of(config.theme, config.accent)
+            build()
+            showRoot("home", focus = true)
+            reloadApps()
+            root.post {
+                logStartup()
+                handleLaunchExtras(intent)
+            }
+            launch { app.config.config.collectLatest { onConfig(it) } }
+        }
+    }
+
+    private fun logStartup() {
+        if (firstFrameLogged) return
+        firstFrameLogged = true
+        val ms = SystemClock.elapsedRealtime() - app.startedAt
+        getSharedPreferences("diagnostics", MODE_PRIVATE).edit().putLong("last_start_ms", ms).apply()
+        Log.i("Nexus", "start: first frame ${ms} ms after process start")
+    }
+
+    private fun build() {
+        val p = palette
+        root = FrameLayout(this).apply { setBackgroundColor(p.base) }
+        backdrop = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+        root.addView(backdrop, flp(MATCH, MATCH))
+        scrim = View(this)
+        root.addView(scrim, flp(MATCH, MATCH))
+        paintScrim(full = false)
+        pageHost = FrameLayout(this).apply { clipChildren = false }
+        root.addView(pageHost, flp(MATCH, MATCH))
+        nav = buildNav()
+        root.addView(nav, flp(MATCH, dp(66), Gravity.TOP))
+        banner = text(11.5f, p.sub1).apply {
+            background = rounded(alpha(p.mantle, 0.92f), dp(16).toFloat(), dp(1), alpha(p.yellow, 0.4f))
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            visibility = View.GONE
+        }
+        root.addView(banner, flp(WRAP, WRAP, Gravity.TOP or Gravity.END).apply { setMargins(0, dp(70), dp(48), 0) })
+        overlayHost = FrameLayout(this)
+        root.addView(overlayHost, flp(MATCH, MATCH))
+        setContentView(root)
+    }
+
+    private fun buildNav(): LinearLayout {
+        val p = palette
+        val bar = hlinear(this).apply { setPadding(dp(48), 0, dp(48), 0) }
+        val mark = TextView(this).apply {
+            text = "N"; textSize = 13f; typeface = BOLD; gravity = Gravity.CENTER; setTextColor(p.onAccent)
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(p.accent, mix(p.accent, 0xFF89B4FA.toInt(), 0.6f))).apply { cornerRadius = dp(6).toFloat() }
+        }
+        bar.addView(mark, llp(dp(20), dp(20)) { marginEnd = dp(7) })
+        bar.addView(text(15f, p.text, BOLD, s = "Nexus"))
+        bar.addView(text(15f, p.sub0, s = " TV"), llp(WRAP, WRAP) { marginEnd = dp(26) })
+        for ((id, label) in listOf("home" to "Home", "movies" to "Movies", "shows" to "TV Shows", "discover" to "Discover", "apps" to "Apps")) {
+            val t = text(13.5f, p.sub0, MEDIUM, s = label).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(11), 0, dp(11), 0)
+                val visible = id != "discover" || app.seerr.isConfigured
+                visibility = if (visible) View.VISIBLE else View.GONE
+                isFocusable = visible
+                isClickable = visible
+                contentDescription = label
+                setOnClickListener { showRoot(id, focus = true) }
+                setOnFocusChangeListener { _, f ->
+                    paintTab(this, id, f)
+                    if (f) handler.postDelayed({ if (hasFocus() && currentRootTab() != id) showRoot(id, focus = false) }, 300)
+                }
+            }
+            tabs[id] = t
+            bar.addView(t, llp(WRAP, dp(30)) { marginEnd = dp(3) })
+        }
+        bar.addView(View(this), llp(0, 1, 1f))
+        status = text(11f, p.sub0).apply { visibility = View.GONE }
+        bar.addView(status, llp(WRAP, WRAP) { marginEnd = dp(14) })
+        searchBtn = iconButton(R.drawable.ic_search, "Search") { showRoot("search", focus = true) }
+        gearBtn = iconButton(R.drawable.ic_gear, "Quick settings") { openQuickSettings() }
+        bar.addView(searchBtn, llp(dp(30), dp(30)) { marginEnd = dp(8) })
+        bar.addView(gearBtn, llp(dp(30), dp(30)) { marginEnd = dp(10) })
+        avatarLetter = text(12f, 0xFF1E1E2E.toInt(), BOLD, s = "N").apply { gravity = Gravity.CENTER }
+        avatarImage = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            visibility = View.GONE
+            outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(view: View, outline: Outline) =
+                    outline.setOval(0, 0, view.width.coerceAtLeast(1), view.height.coerceAtLeast(1))
+            }
+            clipToOutline = true
+        }
+        avatar = FrameLayout(this).apply {
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(0xFFFAB387.toInt(), 0xFFF5C2E7.toInt()),
+            ).apply { shape = GradientDrawable.OVAL }
+            isFocusable = true
+            isClickable = true
+            contentDescription = "Profile and Plex settings"
+            setOnClickListener { push(SettingsPage(this@HomeActivity, SettingsPage.Section.PLEX)) }
+            setOnFocusChangeListener { v, f ->
+                v.foreground = if (f) rounded(0, dp(14).toFloat(), dp(2), palette.text) else null
+            }
+            addView(avatarLetter, flp(MATCH, MATCH))
+            addView(avatarImage, flp(MATCH, MATCH))
+        }
+        bar.addView(avatar, llp(dp(28), dp(28)) { marginEnd = dp(12) })
+        clock = text(15f, p.text, MEDIUM)
+        bar.addView(clock)
+        updateClock()
+        paintAvatar()
+        return bar
+    }
+
+    private fun iconButton(icon: Int, label: String, click: () -> Unit) = ImageView(this).apply {
+        setImageResource(icon)
+        setPadding(dp(6), dp(6), dp(6), dp(6))
+        imageTintList = ColorStateList.valueOf(palette.sub1)
+        isFocusable = true
+        isClickable = true
+        contentDescription = label
+        setOnClickListener { click() }
+        setOnFocusChangeListener { _, f ->
+            background = if (f) rounded(palette.text, dp(15).toFloat()) else null
+            imageTintList = ColorStateList.valueOf(if (f) palette.base else palette.sub1)
+        }
+    }
+
+    fun syncSeerrTab() {
+        val t = tabs["discover"] ?: return
+        val visible = app.seerr.isConfigured
+        t.visibility = if (visible) View.VISIBLE else View.GONE
+        val allow = stack.size <= 1 && visible
+        t.isFocusable = allow
+        t.isClickable = allow
+        if (!visible) {
+            roots.remove("discover")
+        }
+    }
+
+    /** Top chrome must not steal focus while a pushed page (Settings, details) is open. */
+    private fun updateChromeFocusable() {
+        if (!::searchBtn.isInitialized) return
+        val allow = stack.size <= 1
+        tabs.forEach { (id, it) ->
+            val enabled = allow && (id != "discover" || app.seerr.isConfigured)
+            it.isFocusable = enabled
+            it.isClickable = enabled
+        }
+        searchBtn.isFocusable = allow
+        searchBtn.isClickable = allow
+        gearBtn.isFocusable = allow
+        gearBtn.isClickable = allow
+        if (::avatar.isInitialized) {
+            avatar.isFocusable = allow
+            avatar.isClickable = allow
+        }
+    }
+
+    private fun paintTab(t: TextView, id: String, focused: Boolean) {
+        val on = currentRootTab() == id
+        t.background = when {
+            focused -> rounded(palette.text, dp(15).toFloat())
+            else -> null
+        }
+        t.setTextColor(if (focused) palette.base else if (on) palette.text else palette.sub0)
+        t.foreground = if (on && !focused) underline() else null
+    }
+
+    private fun underline(): LayerDrawable {
+        val line = rounded(palette.accent, dp(1).toFloat())
+        return LayerDrawable(arrayOf(line)).apply { setLayerGravity(0, Gravity.BOTTOM or Gravity.FILL_HORIZONTAL); setLayerHeight(0, dp(2)); setLayerInset(0, dp(11), 0, dp(11), dp(1)) }
+    }
+
+    private fun refreshTabs() = tabs.forEach { (id, t) -> paintTab(t, id, t.hasFocus()) }
+
+    fun currentRootTab(): String? = stack.firstOrNull()?.tab
+
+    /** Scrim over the backdrop; [full] dims it evenly (library pages), else the Cinema gradients. */
+    fun paintScrim(full: Boolean) {
+        val base = palette.base
+        val layers = if (full) arrayOf(GradientDrawable().apply { setColor(alpha(base, 0.82f)) })
+        else arrayOf(
+            GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(alpha(base, 0.96f), alpha(base, 0.78f), alpha(base, 0.1f), 0)),
+            GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(base, alpha(base, 0.9f), alpha(base, 0f), 0)),
+            GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(alpha(base, 0.72f), 0, 0, 0)),
+        )
+        scrim.background = LayerDrawable(layers)
+    }
+
+    // ---------- Pages ----------
+
+    fun showRoot(tab: String, focus: Boolean) {
+        val targetTab = if (tab == "discover" && !app.seerr.isConfigured) "home" else tab
+        val page = roots.getOrPut(targetTab) {
+            when (targetTab) {
+                "movies" -> LibraryPage(this, LibraryPage.Kind.MOVIES)
+                "shows" -> LibraryPage(this, LibraryPage.Kind.SHOWS)
+                "discover" -> DiscoverPage(this)
+                "apps" -> AppsPage(this)
+                "search" -> SearchPage(this)
+                else -> HomePage(this)
+            }
+        }
+        stack.forEach { it.onHide() }
+        stack.clear()
+        stack.add(page)
+        mount(page, focus)
+    }
+
+    fun push(page: Page) {
+        stack.lastOrNull()?.onHide()
+        stack.add(page)
+        mount(page, focus = true)
+    }
+
+    fun pop() {
+        if (stack.size <= 1) return
+        stack.removeAt(stack.lastIndex).onHide()
+        mount(stack.last(), focus = true)
+    }
+
+    private fun mount(page: Page, focus: Boolean) {
+        pageHost.removeAllViews()
+        (page.view.parent as? FrameLayout)?.removeView(page.view)
+        pageHost.addView(page.view, flp(MATCH, MATCH))
+        updateChromeFocusable()
+        refreshTabs()
+        page.onShow()
+        if (focus) page.view.post { page.focusDefault() }
+    }
+
+    fun focusNav() {
+        (tabs[currentRootTab()] ?: tabs["home"])?.requestFocus()
+    }
+
+    fun setBackdrop(path: String?) {
+        if (path == backdropPath) return
+        backdropPath = path
+        backdropReq?.dispose()
+        if (path == null) {
+            backdrop.setImageDrawable(null)
+            return
+        }
+        val isPlexPath = path.startsWith("/library/") || path.startsWith("/playlists/")
+        val artProvider = if (isPlexPath) app.plex else app.seerr
+        val url = artProvider.imageUrl(path, 1280, 720)
+        val key = artProvider.imageCacheKey(path, 1280, 720)
+        backdropReq = app.images.enqueue(
+            ImageRequest.Builder(this).data(url).size(1280, 720).target(backdrop)
+                .apply { if (key != null) { diskCacheKey(key); memoryCacheKey(key) } }.build()
+        )
+    }
+
+    // ---------- Playback and actions ----------
+
+    fun play(item: MediaItem, fromStart: Boolean = false) {
+        scope.launch {
+            when (val resolved = PlayableResolver.resolve(app.plex, item)) {
+                is PlayableResolver.Result.OpenDetails -> {
+                    openDetails(resolved.item)
+                    return@launch
+                }
+                is PlayableResolver.Result.Failed -> {
+                    toast(resolved.reason)
+                    return@launch
+                }
+                is PlayableResolver.Result.Play -> {
+                    when (val r = app.playback.play(resolved.item, fromStart)) {
+                        is PlaybackOutcome.Failed -> toast(r.reason)
+                        is PlaybackOutcome.Fallback -> {}
+                        is PlaybackOutcome.Started -> {}
+                    }
+                }
+            }
+        }
+    }
+
+    fun openDetails(item: MediaItem) = push(DetailsPage(this, item))
+
+    fun launchApp(entry: AppEntry) {
+        if (!app.apps.launch(entry)) toast("${entry.label} couldn't be opened")
+    }
+
+    private var voiceResult: ((String) -> Unit)? = null
+    private var micPermissionResult: ((Boolean) -> Unit)? = null
+
+    fun hasMicPermission(): Boolean =
+        checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    fun requestMicPermission(onResult: (Boolean) -> Unit) {
+        if (hasMicPermission()) {
+            onResult(true)
+            return
+        }
+        micPermissionResult = onResult
+        requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 902)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 902) {
+            val granted = grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED
+            micPermissionResult?.invoke(granted)
+            micPermissionResult = null
+        }
+    }
+
+    /** Speech through the TV's own recognizer (no service of ours keeps running). */
+    fun startVoice(intent: Intent, result: (String) -> Unit): Boolean {
+        voiceResult = result
+        val launched = runCatching { startActivityForResult(intent, VOICE); true }.getOrDefault(false)
+        if (!launched) voiceResult = null
+        return launched
+    }
+
+    fun startSearchVoice() {
+        closeOverlay()
+        val page = stack.lastOrNull()
+        if (page is SearchPage) {
+            page.startVoiceSearch()
+        } else {
+            showRoot("search", focus = true)
+            pageHost.post {
+                (stack.lastOrNull() as? SearchPage)?.startVoiceSearch()
+            }
+        }
+    }
+
+    @Deprecated("Activity result APIs need androidx.activity; a launcher doesn't")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == VOICE && resultCode == RESULT_OK) {
+            data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { voiceResult?.invoke(it) }
+        }
+        voiceResult = null
+    }
+
+    // ---------- Overlays ----------
+
+    fun showMenu(title: String?, subtitle: String?, items: List<MenuPanel.Item>) =
+        showMenu(title, subtitle, items, 0, 0)
+
+    override fun showMenu(title: String?, subtitle: String?, items: List<MenuPanel.Item>, anchorStart: Int, anchorTop: Int) {
+        val panel = MenuPanel(this, palette, title, subtitle, items) { closeOverlay() }
+        val wrap = FrameLayout(this).apply { setBackgroundColor(alpha(palette.base, 0.62f)); isClickable = true }
+        val lpx = flp(dp(280), WRAP).apply {
+            if (anchorStart == 0 && anchorTop == 0) gravity = Gravity.CENTER else { leftMargin = anchorStart; topMargin = anchorTop }
+        }
+        wrap.addView(panel, lpx)
+        openOverlay(wrap)
+        panel.post { panel.focusFirst() }
+    }
+
+    fun openOverlay(v: View) {
+        closeOverlay()
+        overlayReturn = currentFocus
+        overlay = v
+        // Block D-pad from landing on Home/settings under the scrim while an overlay is up.
+        pageHost.descendantFocusability = android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        if (::nav.isInitialized) nav.descendantFocusability = android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        overlayHost.addView(v, flp(MATCH, MATCH))
+    }
+
+    override fun closeOverlay() {
+        val v = overlay ?: return
+        overlayHost.removeView(v)
+        overlay = null
+        if (::pageHost.isInitialized) pageHost.descendantFocusability = android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS
+        if (::nav.isInitialized) nav.descendantFocusability = android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS
+        overlayReturn?.takeIf { it.isAttachedToWindow }?.requestFocus()
+        overlayReturn = null
+    }
+
+    override fun openQuickSettings() {
+        if (overlay is QuickSettings) {
+            closeOverlay()
+            return
+        }
+        openOverlay(QuickSettings(this, this).also { it.post { it.focusFirst() } })
+    }
+
+    /** HDMI input picker (remote Input key and Quick Settings tile). */
+    override fun openInputs() {
+        val tv = TvSystem(this)
+        val list = tv.inputs().filter { it.passthrough }
+        if (list.isEmpty()) {
+            closeOverlay()
+            if (!tv.open(TvSystem.Screen.ALL)) toast("This TV doesn't list its HDMI inputs to apps")
+            return
+        }
+        showMenu(
+            "Inputs",
+            "HDMI inputs",
+            list.map { i ->
+                MenuPanel.Item(i.label, "HDMI") {
+                    if (!tv.switchTo(i)) toast("${i.label} couldn't be opened")
+                }
+            },
+        )
+    }
+
+    fun startAmbient(source: AmbientSource) {
+        if (ambient != null) return
+        val v = AmbientView(this, palette, source, config.ambient.showClock, config.clock24h)
+        ambient = v
+        root.addView(v, flp(MATCH, MATCH))
+        v.start(app.cache, app.plex, app.images)
+    }
+
+    override fun startAmbient() = startAmbient(config.ambient.source)
+
+    /** Sleep-timer expiry: black Ambient (not real TV standby). */
+    override fun startSleepAmbient() {
+        closeOverlay()
+        stopAmbient()
+        startAmbient(AmbientSource.BLACK)
+        toast("Sleep timer — Ambient on. Press any key to wake.")
+    }
+
+    override fun openNexusSettings() {
+        closeOverlay()
+        push(SettingsPage(this, SettingsPage.Section.HOME))
+    }
+
+    override fun toast(msg: String) = android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
+
+    private fun stopAmbient(): Boolean {
+        val v = ambient ?: return false
+        v.stop()
+        root.removeView(v)
+        ambient = null
+        return true
+    }
+
+    private fun checkIdle() {
+        val amb = config.ambient
+        if (!visible || !amb.enabled || ambient != null) return
+        if (SystemClock.uptimeMillis() - lastKeyAt >= amb.idleMinutes * 60_000L) startAmbient()
+    }
+
+    // ---------- Keys ----------
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        lastKeyAt = SystemClock.uptimeMillis()
+        if (ambient != null) {
+            if (event.action == KeyEvent.ACTION_UP) stopAmbient()
+            return true
+        }
+        if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+            when (event.action) {
+                KeyEvent.ACTION_DOWN -> if (event.repeatCount == 0) {
+                    backLongPressHandled = false
+                } else {
+                    if (!backLongPressHandled) {
+                        backLongPressHandled = true
+                        openQuickSettings()
+                    }
+                    return true
+                }
+                KeyEvent.ACTION_UP -> if (backLongPressHandled) {
+                    backLongPressHandled = false
+                    return true
+                }
+            }
+        }
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            if (event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN && overlay == null && stack.size <= 1) {
+                val focusedTab = tabs.entries.firstOrNull { it.value.hasFocus() }?.key
+                if (focusedTab != null) {
+                    if (currentRootTab() != focusedTab) showRoot(focusedTab, focus = true)
+                    else stack.lastOrNull()?.focusDefault()
+                    return true
+                }
+            }
+            when (event.keyCode) {
+                // SETTINGS is often stolen by the framework; on TCL the gear arrives as NOTIFICATION.
+                KeyEvent.KEYCODE_SETTINGS, KeyEvent.KEYCODE_NOTIFICATION -> {
+                    openQuickSettings(); return true
+                }
+                KeyEvent.KEYCODE_TV_INPUT, KeyEvent.KEYCODE_WINDOW -> {
+                    openInputs(); return true
+                }
+                // Usually swallowed by Google Assistant; kept as a harmless fallback.
+                KeyEvent.KEYCODE_VOICE_ASSIST -> {
+                    startSearchVoice(); return true
+                }
+                KeyEvent.KEYCODE_SEARCH -> {
+                    if (stack.lastOrNull()?.tab == "search") startSearchVoice()
+                    else showRoot("search", focus = true)
+                    return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    @Deprecated("Activity.onBackPressed is fine for a launcher on API 26+")
+    override fun onBackPressed() {
+        if (overlay != null) { closeOverlay(); return }
+        val top = stack.lastOrNull() ?: return
+        if (top.onBack()) return
+        if (stack.size > 1) { pop(); return }
+        if (top.tab != "home") { showRoot("home", focus = true); return }
+        // A launcher never finishes on Back.
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (!::root.isInitialized) return
+        stopAmbient()
+        val isQuickSettingsToggle = intent.getBooleanExtra(EXTRA_OPEN_QUICK_SETTINGS, false) ||
+            intent.action == ACTION_TOGGLE_NOTIFICATION_PANEL ||
+            intent.action == ACTION_OPEN_NOTIFICATION_PANEL
+        if (!isQuickSettingsToggle) closeOverlay()
+        if (intent.hasCategory(Intent.CATEGORY_HOME) &&
+            !intent.getBooleanExtra(EXTRA_OPEN_INPUTS, false) &&
+            !intent.getBooleanExtra(EXTRA_OPEN_QUICK_SETTINGS, false) &&
+            !intent.getBooleanExtra(EXTRA_OPEN_SETTINGS, false) &&
+            !intent.getBooleanExtra(EXTRA_START_AMBIENT, false) &&
+            !intent.getBooleanExtra(EXTRA_START_SLEEP_AMBIENT, false)
+        ) {
+            showRoot("home", focus = true)
+        }
+        handleLaunchExtras(intent)
+    }
+
+    private fun handleLaunchExtras(intent: Intent?) {
+        if (intent == null || !::root.isInitialized) return
+        when {
+            intent.getBooleanExtra(EXTRA_OPEN_INPUTS, false) -> {
+                intent.removeExtra(EXTRA_OPEN_INPUTS)
+                pageHost.post { openInputs() }
+            }
+            intent.getBooleanExtra(EXTRA_OPEN_QUICK_SETTINGS, false) ||
+                intent.action == ACTION_TOGGLE_NOTIFICATION_PANEL ||
+                intent.action == ACTION_OPEN_NOTIFICATION_PANEL -> {
+                intent.removeExtra(EXTRA_OPEN_QUICK_SETTINGS)
+                // Consumed so a later HOME onNewIntent doesn't reopen the panel.
+                if (intent.action == ACTION_TOGGLE_NOTIFICATION_PANEL || intent.action == ACTION_OPEN_NOTIFICATION_PANEL) {
+                    intent.action = Intent.ACTION_MAIN
+                }
+                pageHost.post { openQuickSettings() }
+            }
+            intent.getBooleanExtra(EXTRA_OPEN_SETTINGS, false) -> {
+                intent.removeExtra(EXTRA_OPEN_SETTINGS)
+                pageHost.post { openNexusSettings() }
+            }
+            intent.getBooleanExtra(EXTRA_START_SLEEP_AMBIENT, false) -> {
+                intent.removeExtra(EXTRA_START_SLEEP_AMBIENT)
+                pageHost.post { startSleepAmbient() }
+            }
+            intent.getBooleanExtra(EXTRA_START_AMBIENT, false) -> {
+                intent.removeExtra(EXTRA_START_AMBIENT)
+                pageHost.post { startAmbient() }
+            }
+        }
+    }
+
+    // ---------- Lifecycle ----------
+
+    override fun onStart() {
+        super.onStart()
+        visible = true
+        app.plex.setActive(true)
+        registerReceiver(packages, IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_ADDED); addAction(Intent.ACTION_PACKAGE_REMOVED); addAction(Intent.ACTION_PACKAGE_CHANGED); addAction(Intent.ACTION_PACKAGE_REPLACED)
+            addDataScheme("package")
+        })
+        handler.post(tick)
+        statusJob = scope.launch {
+            app.plex.status.collectLatest { s ->
+                showStatus(s)
+                if (s is ProviderStatus.Online || s is ProviderStatus.Offline || s is ProviderStatus.Connecting) {
+                    launch {
+                        app.plex.refreshUserProfile()
+                        paintAvatar()
+                    }
+                }
+            }
+        }
+        if (::root.isInitialized) stack.lastOrNull()?.onShow()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        visible = false
+        app.plex.setActive(false)
+        runCatching { unregisterReceiver(packages) }
+        handler.removeCallbacksAndMessages(null)
+        statusJob?.cancel()
+        stack.lastOrNull()?.onHide()
+        stopAmbient()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        scope.cancel()
+    }
+
+    companion object {
+        const val VOICE = 41
+        const val EXTRA_OPEN_INPUTS = "io.github.design_nexus.nexus.OPEN_INPUTS"
+        const val EXTRA_OPEN_QUICK_SETTINGS = "io.github.design_nexus.nexus.OPEN_QUICK_SETTINGS"
+        const val EXTRA_OPEN_SETTINGS = "io.github.design_nexus.nexus.OPEN_SETTINGS"
+        const val EXTRA_START_AMBIENT = "io.github.design_nexus.nexus.START_AMBIENT"
+        const val EXTRA_START_SLEEP_AMBIENT = "io.github.design_nexus.nexus.START_SLEEP_AMBIENT"
+        const val ACTION_TOGGLE_NOTIFICATION_PANEL = "android.app.action.TOGGLE_NOTIFICATION_HANDLER_PANEL"
+        const val ACTION_OPEN_NOTIFICATION_PANEL = "android.app.action.OPEN_NOTIFICATION_HANDLER_PANEL"
+    }
+
+    private fun updateClock() {
+        if (!::clock.isInitialized) return
+        clock.visibility = if (config.showClock) View.VISIBLE else View.GONE
+        val fmt = if (config.clock24h) "H:mm" else "h:mm"
+        clock.text = DateFormat.format(fmt, Date())
+    }
+
+    private fun showStatus(s: ProviderStatus) {
+        if (!::banner.isInitialized) return
+        val show = config.showServerStatus
+        when (s) {
+            is ProviderStatus.Offline -> {
+                val mins = ((s.retryAtMs - System.currentTimeMillis()) / 60000).coerceAtLeast(0)
+                banner.text = if (s.retryAtMs == Long.MAX_VALUE) "${s.serverName}: ${s.reason}"
+                else "${s.serverName} is unreachable · showing your cached library · retrying in ${if (mins < 1) "under a minute" else "$mins min"}"
+                banner.visibility = if (show) View.VISIBLE else View.GONE
+                status.text = "● Offline"
+                status.setTextColor(palette.yellow)
+                status.visibility = if (show) View.VISIBLE else View.GONE
+            }
+            else -> {
+                banner.visibility = View.GONE
+                status.visibility = View.GONE
+            }
+        }
+        paintAvatar()
+        stack.forEach { if (it is HomePage) it.onStatus(s) }
+    }
+
+    private fun paintAvatar() {
+        if (!::avatarLetter.isInitialized) return
+        val session = app.plex.session
+        val name = session?.userName
+        avatarLetter.text = name?.firstOrNull()?.uppercase()?.toString() ?: "N"
+        avatarLetter.visibility = View.VISIBLE
+        val thumb = session?.userThumb
+        if (thumb.isNullOrBlank()) {
+            avatarReq?.dispose()
+            avatarReq = null
+            avatarThumbLoaded = null
+            avatarImage.setImageDrawable(null)
+            avatarImage.visibility = View.GONE
+            return
+        }
+        if (thumb == avatarThumbLoaded && avatarImage.drawable != null) {
+            avatarImage.visibility = View.VISIBLE
+            return
+        }
+        val px = dp(28)
+        avatarImage.visibility = View.VISIBLE
+        avatarReq?.dispose()
+        avatarReq = app.images.enqueue(
+            ImageRequest.Builder(this)
+                .data(thumb)
+                .size(px, px)
+                .target(avatarImage)
+                .build(),
+        )
+        avatarThumbLoaded = thumb
+    }
+
+    private fun onConfig(c: LauncherConfig) {
+        val old = config
+        config = c
+        if (c.theme != old.theme || c.accent != old.accent) {
+            val reopenAppearance = stack.any { it is SettingsPage }
+            backdropReq?.dispose()
+            backdropReq = null
+            backdropPath = null
+            avatarReq?.dispose()
+            avatarReq = null
+            avatarThumbLoaded = null
+            overlay = null
+            overlayReturn = null
+            palette = Palette.of(c.theme, c.accent)
+            roots.clear()
+            val tab = currentRootTab() ?: "home"
+            build()
+            showRoot(tab, focus = !reopenAppearance)
+            if (reopenAppearance) push(SettingsPage(this, SettingsPage.Section.APPEARANCE))
+            refreshTabs()
+            return
+        }
+        updateClock()
+        roots.values.forEach { it.onConfigChanged(c) }
+        stack.filter { it !in roots.values }.forEach { it.onConfigChanged(c) }
+    }
+
+    fun reloadApps() {
+        scope.launch {
+            apps = app.apps.load()
+            roots.values.forEach { it.onAppsChanged(apps) }
+            stack.filter { it !in roots.values }.forEach { it.onAppsChanged(apps) }
+        }
+    }
+}

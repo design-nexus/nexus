@@ -1,6 +1,6 @@
 # Plex API notes
 
-Nyx TV talks to the user's Plex Media Server for library and playback. Account PIN login uses plex.tv.
+Nexus talks to the user's Plex Media Server for library and playback. Account PIN login uses plex.tv.
 
 ## Published vs observed
 

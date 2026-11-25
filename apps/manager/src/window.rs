@@ -72,7 +72,7 @@ pub fn build(app: &gtk::Application) {
 
     let window = gtk::ApplicationWindow::builder()
         .application(app)
-        .title("TV Manager")
+        .title("Nexus Manager")
         .default_width(1100)
         .default_height(720)
         .build();
@@ -89,7 +89,7 @@ pub fn build(app: &gtk::Application) {
         },
     );
 
-    let header = chrome::app_header(&window, "video-display-symbolic", "TV Manager");
+    let header = chrome::app_header(&window, "video-display-symbolic", "Nexus Manager");
     let refresh = w::bar_button("view-refresh-symbolic", "Refresh (F5)");
     refresh.connect_clicked(|_| refresh_all());
     header.end.prepend(&refresh);
@@ -242,7 +242,7 @@ pub fn build(app: &gtk::Application) {
     window.add_controller(key);
 
     let has_tvs = state::get(|s| !s.devices.devices.is_empty());
-    let start = std::env::var("NYX_TV_MANAGER_START")
+    let start = std::env::var("NEXUS_MANAGER_START")
         .ok()
         .map(|s| if s == "launcher" { "home".to_string() } else { s })
         .filter(|s| SECTIONS.contains(&s.as_str()))
@@ -254,7 +254,7 @@ pub fn build(app: &gtk::Application) {
     start_timers();
     window.present();
 
-    if std::env::var_os("NYX_TV_MANAGER_OPEN_SETTINGS").is_some() {
+    if std::env::var_os("NEXUS_MANAGER_OPEN_SETTINGS").is_some() {
         glib::timeout_add_local_once(Duration::from_millis(200), crate::settings::open);
     }
 }
@@ -454,7 +454,7 @@ fn render_sidebar(u: &Ui) {
                     nyx_ui::menu::item("Rename…", move || rename_tv(&a))
                         .icon("document-edit-symbolic"),
                     nyx_ui::menu::separator(),
-                    nyx_ui::menu::item("Remove from TV Manager", move || remove_tv(&b))
+                    nyx_ui::menu::item("Remove from Nexus Manager", move || remove_tv(&b))
                         .icon("user-trash-symbolic")
                         .danger(),
                 ],
@@ -625,8 +625,8 @@ pub fn remove_tv(key: &str) {
     let name = state::get(|s| s.devices.find(&key).map(|d| d.name().to_string()))
         .unwrap_or_default();
     crate::page::confirm(
-        &format!("Remove {name} from TV Manager?"),
-        "Only this list changes. Nyx TV and everything on the TV stay as they are.",
+        &format!("Remove {name} from Nexus Manager?"),
+        "Only this list changes. Nexus and everything on the TV stay as they are.",
         "Remove",
         move || forget_tv(&key),
     );

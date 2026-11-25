@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "nyx-tv"
+rootProject.name = "nexus"
 include(":app", ":core", ":media-api", ":provider-plex", ":provider-seerr")

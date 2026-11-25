@@ -7,4 +7,4 @@
     android:canRetrieveWindowContent="false"
     android:description="@string/a11y_fallback_desc"
     android:notificationTimeout="200"
-    android:settingsActivity="io.github.design_nexus.nyx.tv.ui.HomeActivity" />
+    android:settingsActivity="io.github.design_nexus.nexus.ui.HomeActivity" />

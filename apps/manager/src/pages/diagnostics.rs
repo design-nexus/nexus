@@ -1,4 +1,4 @@
-//! Diagnostics: live figures, the Nyx TV log, a full audit and an export.
+//! Diagnostics: live figures, the Nexus log, a full audit and an export.
 
 use crate::ops;
 use crate::page::{self, Page};
@@ -81,7 +81,7 @@ pub fn render(st: &State) {
     };
     let copy_text = log_text.clone();
     let (card, rows) = page::card(
-        "Nyx TV log",
+        "Nexus log",
         &[page::icon("edit-copy-symbolic", "Copy the log", move || {
             if let Some(win) = crate::window::window() {
                 win.clipboard().set_text(&copy_text);
@@ -104,7 +104,7 @@ pub fn render(st: &State) {
         .build();
     scroll.add_css_class("tm-log-box");
     rows.append(&scroll);
-    rows.append(&page::dim("Recent lines from Nyx TV. Sign-in tokens are left out."));
+    rows.append(&page::dim("Recent lines from Nexus. Sign-in tokens are left out."));
     p.add(&card);
 }
 
@@ -147,7 +147,7 @@ fn export() {
             .and_then(|d| d.format("%Y%m%d-%H%M%S").ok())
             .map(|s| s.to_string())
             .unwrap_or_else(|| "export".into());
-        let dest = dir.join(format!("nyx-tv-diagnostics-{stamp}"));
+        let dest = dir.join(format!("nexus-diagnostics-{stamp}"));
         ops::run_tv(
             "Export diagnostics",
             move |ctx, tv| {

@@ -1,4 +1,4 @@
-//! Manager preferences (`~/.config/nyx-tv-manager/settings.toml`).
+//! Manager preferences (`~/.config/nexus-manager/settings.toml`).
 
 pub use nyx_theme::ThemeMode;
 
@@ -38,7 +38,7 @@ fn path() -> PathBuf {
                 .unwrap_or_else(|| PathBuf::from("."))
                 .join(".config")
         });
-    base.join("nyx-tv-manager").join("settings.toml")
+    base.join("nexus-manager").join("settings.toml")
 }
 
 pub fn get() -> Prefs {

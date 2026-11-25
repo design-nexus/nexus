@@ -1,4 +1,4 @@
-//! Backups: Nyx TV's layout and settings to and from a file, or straight to
+//! Backups: Nexus's layout and settings to and from a file, or straight to
 //! another TV. Plex sign-in never leaves the TV.
 
 use crate::devices;
@@ -9,7 +9,7 @@ use crate::sync;
 use anyhow::bail;
 use gtk::gio;
 use gtk::prelude::*;
-use nyx_tv_device::Tv;
+use nexus_device::Tv;
 use std::cell::RefCell;
 use std::path::PathBuf;
 
@@ -32,12 +32,12 @@ pub fn render(st: &State) {
     if super::gate(&p, st, true) {
         return;
     }
-    let installed = st.overview().is_some_and(|o| o.nyx_package.is_some());
+    let installed = st.overview().is_some_and(|o| o.nexus_package.is_some());
     if !installed {
         p.add_center(&page::empty(
             "document-save-symbolic",
-            "Nyx TV isn't installed",
-            "Backups hold Nyx TV's layout and settings. Install Nyx TV first.",
+            "Nexus isn't installed",
+            "Backups hold Nexus's layout and settings. Install Nexus first.",
             Some(("Install", Box::new(|| crate::window::show_section("install")))),
         ));
         return;
@@ -88,8 +88,8 @@ pub fn render(st: &State) {
 fn export_settings() {
     let Some(win) = crate::window::window() else { return };
     let dialog = gtk::FileDialog::builder()
-        .title("Export Nyx TV layout")
-        .initial_name("nyx-tv-settings.json")
+        .title("Export Nexus layout")
+        .initial_name("nexus-settings.json")
         .build();
     dialog.save(Some(&win), None::<&gio::Cancellable>, |res| {
         let Some(path) = res.ok().and_then(|f| f.path()) else { return };
@@ -108,10 +108,10 @@ fn export_settings() {
 fn import_settings() {
     let Some(win) = crate::window::window() else { return };
     let filter = gtk::FileFilter::new();
-    filter.set_name(Some("Nyx TV backup (JSON)"));
+    filter.set_name(Some("Nexus backup (JSON)"));
     filter.add_pattern("*.json");
     let dialog = gtk::FileDialog::builder()
-        .title("Import Nyx TV layout")
+        .title("Import Nexus layout")
         .default_filter(&filter)
         .build();
     dialog.open(Some(&win), None::<&gio::Cancellable>, |res| {
@@ -150,7 +150,7 @@ fn copy_to(target_key: &str, target_name: &str) {
                     let dir = std::env::var_os("XDG_RUNTIME_DIR")
                         .map(PathBuf::from)
                         .unwrap_or_else(std::env::temp_dir);
-                    let tmp = dir.join(format!("nyx-tv-layout-{}.json", std::process::id()));
+                    let tmp = dir.join(format!("nexus-layout-{}.json", std::process::id()));
                     let result = (|| {
                         ctx.step("Exporting the layout…");
                         tv.export_settings(&tmp)?;
@@ -158,10 +158,10 @@ fn copy_to(target_key: &str, target_name: &str) {
                         let serial = sync::resolve_serial(&target)?;
                         ctx.step(&format!("Importing on {}…", target.name()));
                         let other = Tv::new(&serial)?.with_root(devices::repo_root());
-                        if !other.has_package(nyx_tv_device::NYX_TV_PKG).unwrap_or(false)
-                            && !other.has_package(nyx_tv_device::NYX_TV_PKG_DEBUG).unwrap_or(false)
+                        if !other.has_package(nexus_device::NEXUS_PKG).unwrap_or(false)
+                            && !other.has_package(nexus_device::NEXUS_PKG_DEBUG).unwrap_or(false)
                         {
-                            bail!("Nyx TV isn't installed on {}", target.name());
+                            bail!("Nexus isn't installed on {}", target.name());
                         }
                         other.import_settings(&tmp)?;
                         Ok(format!("Copied the layout to {}", target.name()))
@@ -196,7 +196,7 @@ pub fn export_snapshots() {
                 if matching.is_empty() {
                     bail!("No snapshots for this TV's firmware yet");
                 }
-                let dest = dir.join("nyx-tv-snapshots");
+                let dest = dir.join("nexus-snapshots");
                 std::fs::create_dir_all(&dest)?;
                 for (path, _) in &matching {
                     if let Some(name) = path.file_name() {

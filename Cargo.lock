@@ -864,6 +864,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexus-adb"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "thiserror",
+]
+
+[[package]]
+name = "nexus-device"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "nexus-adb",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "toml 0.8.23",
+]
+
+[[package]]
+name = "nexus-manager"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-channel",
+ "gtk4",
+ "nexus-adb",
+ "nexus-device",
+ "nyx-theme",
+ "nyx-ui",
+ "serde",
+ "toml 0.8.23",
+]
+
+[[package]]
 name = "num"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1026,42 +1062,6 @@ dependencies = [
  "serde",
  "serde_json",
  "toml 1.2.1+spec-1.1.0",
-]
-
-[[package]]
-name = "nyx-tv-adb"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "thiserror",
-]
-
-[[package]]
-name = "nyx-tv-device"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "nyx-tv-adb",
- "serde",
- "serde_json",
- "thiserror",
- "toml 0.8.23",
-]
-
-[[package]]
-name = "nyx-tv-manager"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-channel",
- "gtk4",
- "nyx-theme",
- "nyx-tv-adb",
- "nyx-tv-device",
- "nyx-ui",
- "serde",
- "toml 0.8.23",
 ]
 
 [[package]]

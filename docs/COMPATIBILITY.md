@@ -13,14 +13,14 @@ Tested with `scripts/launcher.sh`, snapshot `audit/snapshot-Smart_TV-20261114-14
 
 | Step | Result |
 |------|--------|
-| `set-home` alone | Role becomes Nyx TV, but Home still opens Google TV home |
+| `set-home` alone | Role becomes Nexus, but Home still opens Google TV home |
 | `disable-stock` (launcherx only) | Home opens `setupwraith` `RecoveryActivity` (priority=1) |
-| Disable launcherx **and** setupwraith | Home opens Nyx TV; Settings and Play Store still work; Home returns to Nyx |
+| Disable launcherx **and** setupwraith | Home opens Nexus; Settings and Play Store still work; Home returns to Nexus |
 | `restore` | Re-enables both; Google TV home is back |
 
 `scripts/launcher.sh disable-stock` now disables setupwraith when present; `restore` re-enables it from the snapshot. Nothing is uninstalled.
 
-Optional **Nyx TV remote helper** (AccessibilityService): Settings → TV and inputs. Off by default. Remaps Settings/gear when the key reaches Accessibility; optionally reopens Nyx if launcherx/setupwraith steals Home. On Bedroom the physical gear is eaten by SystemUI before Accessibility — use the nav gear.
+Optional **Nexus remote helper** (AccessibilityService): Settings → TV and inputs. Off by default. Remaps Settings/gear when the key reaches Accessibility; optionally reopens Nexus if launcherx/setupwraith steals Home. On Bedroom the physical gear is eaten by SystemUI before Accessibility — use the nav gear.
 
 ### Plex deep links (same day)
 
@@ -28,19 +28,19 @@ Leanback launch and `plex://` VIEW intents open `tv.plex.app.MainActivity` (stat
 
 ### Phase 5 checks (2026-11-15)
 
-Nyx set as HOME on Bedroom (snapshot `audit/snapshot-Smart_TV-20261115-112717.env`; verify passed). Living Room not tested.
+Nexus set as HOME on Bedroom (snapshot `audit/snapshot-Smart_TV-20261115-112717.env`; verify passed). Living Room not tested.
 
 | Check | Result | Notes |
 |-------|--------|-------|
-| Home → Nyx (as HOME) | **Observed** | After `set-home` + `disable-stock` (launcherx + setupwraith); Settings/Play Store still open; Home returns to Nyx |
+| Home → Nexus (as HOME) | **Observed** | After `set-home` + `disable-stock` (launcherx + setupwraith); Settings/Play Store still open; Home returns to Nexus |
 | Remote Settings key | **Nav gear** | Physical gear is `KEYCODE_NOTIFICATION` → SystemUI `TvNotificationPanel` with `config_notificationHandlerPackage` = launcherx (`DashboardHandler`). With launcherx disabled-user that resolve fails (key does nothing; many presses can still hit Realtek product info). Policy handles the key before Accessibility, so the remote helper cannot steal it on Bedroom. **Nav gear** opens Quick Settings. HomeActivity still handles `TOGGLE_NOTIFICATION_HANDLER_PANEL` / `KEYCODE_NOTIFICATION` when delivered. A later Manager option may keep launcherx’s dashboard handler without its Home activity. |
-| Remote Input key | **Wired** | `KEYCODE_TV_INPUT` while Nyx is focused opens our Inputs menu (duplicate labels collapsed). Firmware `VIEW_INPUTS` is handled by TCL Quick Panel (`com.tcl.suspension`); we do not claim that intent (avoids a chooser) |
-| Remote mic → Nyx Search | **No** | System Assist key opens Google Assistant; Nyx voice search is the Search-screen mic |
-| Sleep timer (Nyx) | **In-app** | Quick Settings: 30/60/90/120 → Ambient black. Real standby needs privileged APIs; Google TV launcherx sleep timer is unavailable while launcherx is disabled. Tile can deep-link Power/Display settings when present |
-| Standby / wake → Nyx | **Unverified** | Needs a manual sleep/wake with Nyx left as HOME |
-| Chromecast / mediashell installed | **Observed** | `com.google.android.apps.mediashell` present (incl. cast_browser splits). Cast *while Nyx is HOME* not re-tested this session |
+| Remote Input key | **Wired** | `KEYCODE_TV_INPUT` while Nexus is focused opens our Inputs menu (duplicate labels collapsed). Firmware `VIEW_INPUTS` is handled by TCL Quick Panel (`com.tcl.suspension`); we do not claim that intent (avoids a chooser) |
+| Remote mic → Nexus Search | **No** | System Assist key opens Google Assistant; Nexus voice search is the Search-screen mic |
+| Sleep timer (Nexus) | **In-app** | Quick Settings: 30/60/90/120 → Ambient black. Real standby needs privileged APIs; Google TV launcherx sleep timer is unavailable while launcherx is disabled. Tile can deep-link Power/Display settings when present |
+| Standby / wake → Nexus | **Unverified** | Needs a manual sleep/wake with Nexus left as HOME |
+| Chromecast / mediashell installed | **Observed** | `com.google.android.apps.mediashell` present (incl. cast_browser splits). Cast *while Nexus is HOME* not re-tested this session |
 | HDMI / TV inputs | **Observed** | `dumpsys tv_input` lists TCL passthrough HDMI ids + `TDTVInputService`; several ports state 0/1 |
-| CEC | **Observed** | `dumpsys hdmi_control`: CEC enabled, display_name `Bedroom TV`, 4 HDMI_IN ports with cec:true. Power/input routing with Nyx as HOME **unverified** |
+| CEC | **Observed** | `dumpsys hdmi_control`: CEC enabled, display_name `Bedroom TV`, 4 HDMI_IN ports with cec:true. Power/input routing with Nexus as HOME **unverified** |
 | DRM apps launch | **Observed** | YouTube TV `am start` COLD TotalTime 1452 ms; Plex `tv.plex.app.MainActivity` ok (~2.2 s). Netflix package present; play-through not timed |
 | Debloat catalog | **Observed** | TOML under `data/debloat/BeyondTV4/…`; Manager ∩ `pm path`. Brief disable of 3 optional pkgs: see [BENCHMARKS.md](BENCHMARKS.md) |
 
@@ -52,4 +52,4 @@ Deferred — no Phase 5 measurements yet.
 
 ## Manager
 
-Desktop install and launcher replace/restore: [INSTALLATION.md](INSTALLATION.md), [RECOVERY.md](RECOVERY.md). Debloat catalogs: `data/debloat/` (copied to `~/.local/share/nyx-tv-manager/debloat` on install).
+Desktop install and launcher replace/restore: [INSTALLATION.md](INSTALLATION.md), [RECOVERY.md](RECOVERY.md). Debloat catalogs: `data/debloat/` (copied to `~/.local/share/nexus-manager/debloat` on install).

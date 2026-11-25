@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "io.github.design_nexus.nyx.tv"
+    namespace = "io.github.design_nexus.nexus"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "io.github.design_nexus.nyx.tv"
+        applicationId = "io.github.design_nexus.nexus"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
@@ -17,9 +17,9 @@ android {
     }
 
     signingConfigs {
-        // Release builds are signed with the key named in ~/.config/nyx-tv/signing.properties
+        // Release builds are signed with the key named in ~/.config/nexus/signing.properties
         // (storeFile, storePassword, keyAlias, keyPassword); without it they fall back to debug.
-        val props = file("${System.getProperty("user.home")}/.config/nyx-tv/signing.properties")
+        val props = file("${System.getProperty("user.home")}/.config/nexus/signing.properties")
         if (props.exists()) {
             val p = Properties().apply { props.inputStream().use { load(it) } }
             create("release") {
@@ -34,13 +34,13 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
-            resValue("string", "app_name", "Nyx TV (debug)")
+            resValue("string", "app_name", "Nexus (debug)")
         }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            resValue("string", "app_name", "Nyx TV")
+            resValue("string", "app_name", "Nexus")
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }

@@ -5,7 +5,7 @@ use crate::actions::{self, InstallAction};
 use crate::page::{self, Page};
 use crate::state::State;
 use gtk::prelude::*;
-use nyx_tv_device::NYX_TV_PKG_DEBUG;
+use nexus_device::NEXUS_PKG_DEBUG;
 use std::cell::RefCell;
 
 thread_local! {
@@ -36,8 +36,8 @@ pub fn render(st: &State) {
     }
 
     let o = st.overview();
-    let on_tv_ver = o.and_then(|o| o.nyx_version.clone());
-    let tv_debug = o.and_then(|o| o.nyx_package.as_deref()) == Some(NYX_TV_PKG_DEBUG);
+    let on_tv_ver = o.and_then(|o| o.nexus_version.clone());
+    let tv_debug = o.and_then(|o| o.nexus_package.as_deref()) == Some(NEXUS_PKG_DEBUG);
     let action = actions::current_install_action();
 
     if st.connected() {
@@ -61,8 +61,8 @@ pub fn render(st: &State) {
     let (tv_desc, tv_tag) = match (st.connected(), &on_tv_ver, tv_debug) {
         (false, _, _) => ("TV offline".to_string(), None),
         (true, None, _) => ("Not installed".to_string(), None),
-        (true, Some(v), true) => (format!("Nyx TV {v}"), Some(page::tag("Debug build", "warning"))),
-        (true, Some(v), false) => (format!("Nyx TV {v}"), Some(page::tag("Installed", "accent"))),
+        (true, Some(v), true) => (format!("Nexus {v}"), Some(page::tag("Debug build", "warning"))),
+        (true, Some(v), false) => (format!("Nexus {v}"), Some(page::tag("Installed", "accent"))),
     };
     let lead = gtk::Image::from_icon_name("video-display-symbolic");
     rows.append(&page::row(
@@ -89,7 +89,7 @@ pub fn render(st: &State) {
             end.push(page::icon("folder-open-symbolic", "Show in folder", move || open_folder(&path)));
             rows.append(&page::row(
                 "Release build",
-                &format!("Nyx TV {} · {} · {}", info.version_name, info.size_label, info.modified_label),
+                &format!("Nexus {} · {} · {}", info.version_name, info.size_label, info.modified_label),
                 Some(lead.upcast_ref()),
                 &end,
             ));
@@ -107,7 +107,7 @@ pub fn render(st: &State) {
         let path = info.path.clone();
         rows.append(&page::row(
             "Debug build",
-            &format!("Nyx TV {} · {} · {}", info.version_name, info.size_label, info.modified_label),
+            &format!("Nexus {} · {} · {}", info.version_name, info.size_label, info.modified_label),
             Some(lead.upcast_ref()),
             &[
                 page::icon("folder-open-symbolic", "Show in folder", move || open_folder(&path)),
@@ -146,14 +146,14 @@ pub fn render(st: &State) {
 
     // Remove
     if st.connected() && on_tv_ver.is_some() {
-        let home = o.is_some_and(|o| o.nyx_is_home());
+        let home = o.is_some_and(|o| o.nexus_is_home());
         let (card, rows) = page::card("Remove", &[]);
         rows.append(&page::row(
-            "Uninstall Nyx TV",
+            "Uninstall Nexus",
             if home {
-                "Nyx TV is the home app, so Google TV Home is turned back on first."
+                "Nexus is the home app, so Google TV Home is turned back on first."
             } else {
-                "Removes Nyx TV and its settings from this TV."
+                "Removes Nexus and its settings from this TV."
             },
             None,
             &[page::danger("Uninstall", "Uninstall now?", actions::uninstall)],

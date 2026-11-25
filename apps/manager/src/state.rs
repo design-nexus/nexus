@@ -4,7 +4,7 @@
 
 use crate::activity;
 use crate::devices::{self, DeviceFile, SavedTv};
-use nyx_tv_device::{ApkInfo, DebloatPackage, Overview, QuickMetrics, Snapshot};
+use nexus_device::{ApkInfo, DebloatPackage, Overview, QuickMetrics, Snapshot};
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;

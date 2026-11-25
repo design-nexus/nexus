@@ -6,7 +6,7 @@ use crate::page::{self, Page};
 use crate::state::{self, Load, State};
 use crate::sync;
 use gtk::prelude::*;
-use nyx_tv_device::{DebloatKind, DebloatPackage};
+use nexus_device::{DebloatKind, DebloatPackage};
 use nyx_ui::widgets as w;
 use std::cell::RefCell;
 
@@ -148,7 +148,7 @@ pub fn render(st: &State) {
     ));
 
     for (kind, title, note) in [
-        (DebloatKind::Optional, "Safe to turn off", "Not needed with Nyx TV."),
+        (DebloatKind::Optional, "Safe to turn off", "Not needed with Nexus."),
         (
             DebloatKind::Dependent,
             "Depends on the TV",
@@ -171,7 +171,7 @@ pub fn render(st: &State) {
     if !protected.is_empty() {
         let (card, rows) = page::card("", &[]);
         let inner = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        inner.append(&page::dim("Play Store, Cast, system updates, the TV's own apps and Nyx TV are never changed."));
+        inner.append(&page::dim("Play Store, Cast, system updates, the TV's own apps and Nexus are never changed."));
         for pkg in protected {
             inner.append(&pkg_row(pkg, None));
         }

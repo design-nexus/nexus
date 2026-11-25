@@ -1,12 +1,12 @@
 [workspace]
 resolver = "3"
-members = ["crates/nyx-tv-adb", "crates/nyx-tv-device", "apps/manager"]
+members = ["crates/nexus-adb", "crates/nexus-device", "apps/manager"]
 
 [workspace.package]
 edition = "2024"
 license = "MIT"
 authors = ["Ken Smith"]
-repository = "https://github.com/design-nexus/nyx-tv"
+repository = "https://github.com/design-nexus/nexus"
 
 [profile.release]
 lto = "thin"

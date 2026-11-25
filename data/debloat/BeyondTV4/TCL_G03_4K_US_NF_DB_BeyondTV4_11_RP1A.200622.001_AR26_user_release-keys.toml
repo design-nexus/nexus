@@ -174,13 +174,13 @@ kind = "protected"
 description = "Setup / recovery HOME contender"
 
 [[package]]
-package = "io.github.design_nexus.nyx.tv"
-title = "Nyx TV"
+package = "io.github.design_nexus.nexus"
+title = "Nexus"
 kind = "protected"
-description = "Nyx TV launcher"
+description = "Nexus launcher"
 
 [[package]]
-package = "io.github.design_nexus.nyx.tv.debug"
-title = "Nyx TV (debug)"
+package = "io.github.design_nexus.nexus.debug"
+title = "Nexus (debug)"
 kind = "protected"
-description = "Nyx TV debug build"
+description = "Nexus debug build"
